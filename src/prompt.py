@@ -13,6 +13,7 @@ Extract up to {top_n} of the most useful code snippets that demonstrate:
      - `description`: 2-4 sentence explanation of what the code does and why it's useful
      - `language`: Programming language (e.g., "Python", "JavaScript", "Go")
      - `code`: The exact, verbatim code snippet (5-30 lines typically)
+     - `filename`: The source filename being analyzed (REQUIRED)
 
 ## Title Format Guidelines
 - **API Calls**: "API: <Action> via <Module|Type>" (e.g., "API: Send Message via SQSClient")
@@ -20,6 +21,7 @@ Extract up to {top_n} of the most useful code snippets that demonstrate:
 
 ## Critical Rules
 - **Use add_snippet tool for EVERY extracted snippet** - Do not format output text yourself
+- **Include filename parameter** - Always pass the filename when calling add_snippet
 - **Extract code verbatim** - Do not modify, add, or fabricate any code
 - **Include context** - Snippets should include setup, error handling, and cleanup when relevant
 - **Focus on reusability** - Choose snippets that demonstrate complete, practical patterns
