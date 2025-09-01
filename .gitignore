@@ -11,3 +11,6 @@ wheels/
 
 # secrets
 .env
+
+# claude code
+.claude
