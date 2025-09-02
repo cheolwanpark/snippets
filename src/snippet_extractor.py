@@ -1,5 +1,5 @@
 import os
-from claude_adk import Agent
+from claude_agent_toolkit import Agent, ConfigurationError, ConnectionError, ExecutionError
 from .snippet_storage import SnippetStorage
 from .prompt import SYSTEM_PROMPT, PROMPT
 
@@ -8,7 +8,7 @@ class SnippetExtractor:
     def __init__(self):
         self.oauth_token = os.getenv('CLAUDE_CODE_OAUTH_TOKEN')
         if not self.oauth_token:
-            raise ValueError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
+            raise ConfigurationError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
     
     async def extract_from_content(self, filename: str, content: str, 
                                    top_n: int = 10, storage=None) -> dict:
@@ -45,6 +45,24 @@ class SnippetExtractor:
                 
             return result
             
+        except ConfigurationError as e:
+            return {
+                "success": False,
+                "response": f"Configuration error: {str(e)}",
+                "error": "ConfigurationError"
+            }
+        except ConnectionError as e:
+            return {
+                "success": False,
+                "response": f"Connection failed (Docker/network issue): {str(e)}",
+                "error": "ConnectionError"
+            }
+        except ExecutionError as e:
+            return {
+                "success": False,
+                "response": f"Execution failed: {str(e)}",
+                "error": "ExecutionError"
+            }
         except Exception as e:
             return {
                 "success": False,

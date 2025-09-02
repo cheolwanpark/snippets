@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
+from claude_agent_toolkit import ConnectionError
 from .file_loader import FileData
 from .snippet_extractor import SnippetExtractor  
 from .snippet_storage import SnippetStorage
@@ -72,6 +73,12 @@ class ProcessQueue:
             finally:
                 loop.close()
                 
+        except ConnectionError as e:
+            return {
+                "success": False,
+                "filename": file_data.filename,
+                "error": f"Docker/network issue: {str(e)}"
+            }
         except Exception as e:
             return {
                 "success": False,

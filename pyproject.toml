@@ -5,5 +5,5 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "claude-adk>=0.1.2",
+    "claude-agent-toolkit>=0.1.1",
 ]

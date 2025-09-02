@@ -131,8 +131,8 @@ wheels = [
 ]
 
 [[package]]
-name = "claude-adk"
-version = "0.1.2"
+name = "claude-agent-toolkit"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docker" },
@@ -141,9 +141,9 @@ dependencies = [
     { name = "jsonpatch" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/d9/1ed5eb1386c83cb619598e908347cae39d4fd641890fb604817af1d5937f/claude_adk-0.1.2.tar.gz", hash = "sha256:ae837420ec8c2e84807678b9fa757e541963563ae9dde8f5f08bbe2375559a11", size = 30227, upload-time = "2025-08-31T12:19:35.96Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/dc/04e1b0e2e9e5a3176454f5300980bc190fd4262b12941fe0fb6b3a13553b/claude_agent_toolkit-0.1.1.tar.gz", hash = "sha256:726d599c5302e92f0d306c951085fa6cc18e9224e5222de1d2ed6354352df03a", size = 34363, upload-time = "2025-09-01T13:46:23.799Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/9b/b3cbf9f1cea38d4236f34f05648b93dfc2d08e63ba9c6144d0e7b6d9c238/claude_adk-0.1.2-py3-none-any.whl", hash = "sha256:cca064d3c7ac69a22e3c9bc89b506d8668bc152017ccd2947021d9ef1d3136f7", size = 18845, upload-time = "2025-08-31T12:19:33.518Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/a3/e6bae88c6afa9ff29270a9295feac62e276c5fca1eb8a955bb166ba86db0/claude_agent_toolkit-0.1.1-py3-none-any.whl", hash = "sha256:0404b3b3d88a10cc38ccf627679a81afe79e1e7c5cc2011e8dbce28bc5ad9a34", size = 24069, upload-time = "2025-09-01T13:46:22.669Z" },
 ]
 
 [[package]]
@@ -1041,11 +1041,11 @@ name = "snippets"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "claude-adk" },
+    { name = "claude-agent-toolkit" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "claude-adk", specifier = ">=0.1.2" }]
+requires-dist = [{ name = "claude-agent-toolkit", specifier = ">=0.1.1" }]
 
 [[package]]
 name = "sse-starlette"

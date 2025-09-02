@@ -4,23 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python-based code snippet extraction tool that uses the Claude ADK (claude-adk) to analyze source code files and extract valuable, reusable code patterns. The tool integrates with Claude's API to identify library usage patterns, best-practice implementations, and other educational code snippets.
+This is a Python-based code snippet extraction tool that uses the Claude Agent Toolkit (claude-agent-toolkit) to analyze source code files and extract valuable, reusable code patterns. The tool integrates with Claude's API to identify library usage patterns, best-practice implementations, and other educational code snippets.
 
 ## Development Environment
 
 **Python Version**: Requires Python >=3.12  
 **Package Manager**: Uses `uv` for dependency management  
-**Main Dependency**: `claude-adk>=0.1.2`
+**Main Dependency**: `claude-agent-toolkit>=0.1.1`
 
 ## Key Architecture
 
 The project follows a modular architecture with three core components:
 
-1. **SnippetExtractor** (`src/snippet_extractor.py`): Main orchestration class that coordinates between file reading, Claude ADK agent creation, and the snippet storage tool
-2. **SnippetStorage** (`src/snippet_storage.py`): A Claude ADK tool that acts as structured storage for extracted snippets, implementing the `add_snippet` method
+1. **SnippetExtractor** (`src/snippet_extractor.py`): Main orchestration class that coordinates between file reading, Claude Agent Toolkit agent creation, and the snippet storage tool
+2. **SnippetStorage** (`src/snippet_storage.py`): A Claude Agent Toolkit tool that acts as structured storage for extracted snippets, implementing the `add_snippet` method
 3. **Prompt System** (`src/prompt.py`): Contains the system prompt and user prompt templates that guide Claude's snippet extraction behavior
 
-The tool operates by creating a SnippetStorage tool instance, initializing a Claude ADK Agent with this tool, and then running the agent against source code content to extract structured snippets.
+The tool operates by creating a SnippetStorage tool instance, initializing a Claude Agent Toolkit Agent with this tool, and then running the agent against source code content to extract structured snippets.
 
 ## Environment Setup
 
@@ -52,4 +52,4 @@ python main.py samples/test_sample.py --top-n 5
 
 ## Tool Integration
 
-The SnippetStorage class extends BaseTool from claude-adk and uses the `@tool` decorator to expose the `add_snippet` method to Claude. The tool manages its own state and provides methods for output formatting and snippet counting.
+The SnippetStorage class extends BaseTool from claude-agent-toolkit and uses the `@tool` decorator to expose the `add_snippet` method to Claude. The tool manages its own state and provides methods for output formatting and snippet counting.

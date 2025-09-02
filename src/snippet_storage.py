@@ -1,4 +1,4 @@
-from claude_adk import BaseTool, tool
+from claude_agent_toolkit import BaseTool, tool
 from typing import Dict, Any
 
 
