@@ -3,6 +3,7 @@ import time
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 from claude_agent_toolkit import ConnectionError
+from tqdm import tqdm
 from .file_loader import FileData
 from .snippet_extractor import SnippetExtractor  
 from .snippet_storage import SnippetStorage
@@ -24,35 +25,47 @@ class ProcessQueue:
         storage = SnippetStorage()
         storage.run(workers=self.max_concurrency * 2)
         
-        print(f"⚡ Processing {len(files_data)} files (concurrency: {self.max_concurrency})...")
+        # Create progress bar with detailed formatting
+        pbar = tqdm(
+            total=len(files_data),
+            desc="Processing files",
+            unit="file",
+            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]',
+            position=0,
+            leave=True
+        )
         
-        # Create tasks for all files
-        tasks = [
-            self._process_file(file_data, top_n, storage)
-            for file_data in files_data
-        ]
+        # Process with progress updates
+        async def process_with_progress(file_data):
+            result = await self._process_file(file_data, top_n, storage)
+            pbar.update(1)
+            # Update description with current file (truncated)
+            filename = file_data.filename.split('/')[-1][:30]
+            pbar.set_postfix(file=filename, refresh=False)
+            return result
         
-        # Execute all tasks concurrently
+        tasks = [process_with_progress(file_data) for file_data in files_data]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
+        # Close progress bar
+        pbar.close()
+        
         # Count successes and failures
-        successful = sum(1 for r in results if isinstance(r, dict) and r.get("success"))
+        successful = sum(1 for r in results if r is True)
         failed = len(results) - successful
         
         total_time = time.time() - start_time
         
-        # Summary
-        print(f"\n✅ Processing complete!")
-        print(f"📈 Files processed: {successful}/{len(files_data)}")
-        print(f"🔢 Total snippets: {storage.get_snippet_count()}")
-        print(f"⏱️  Total time: {total_time:.1f}s")
+        # Display final summary using tqdm.write
+        tqdm.write(f"\n✅ Processing complete!")
+        tqdm.write(f"📈 Files: {successful}/{len(files_data)} | 🔢 Snippets: {storage.get_snippet_count()} | ⏱️ Time: {total_time:.1f}s")
         if failed > 0:
-            print(f"⚠️  Failed files: {failed}")
+            tqdm.write(f"⚠️  Failed: {failed} files")
         
         # Return formatted output
         return storage.to_file()
     
-    def _run_extractor_sync(self, file_data: FileData, top_n: int, storage) -> Dict[str, Any]:
+    def _run_extractor_sync(self, file_data: FileData, top_n: int, storage) -> bool:
         """Run snippet extraction synchronously in a thread - bypasses Docker blocking."""
         try:
             # Create new event loop for this thread
@@ -61,30 +74,20 @@ class ProcessQueue:
             
             try:
                 extractor = SnippetExtractor()
-                result = loop.run_until_complete(
+                success = loop.run_until_complete(
                     extractor.extract_from_content(
                         filename=file_data.filename,
                         content=file_data.content,
-                        top_n=top_n,
-                        storage=storage
+                        storage=storage,
+                        top_n=top_n
                     )
                 )
-                return result
+                return success
             finally:
                 loop.close()
                 
-        except ConnectionError as e:
-            return {
-                "success": False,
-                "filename": file_data.filename,
-                "error": f"Docker/network issue: {str(e)}"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "filename": file_data.filename,
-                "error": str(e)
-            }
+        except (ConnectionError, Exception):
+            return False
     
     async def _process_file(self, file_data: FileData, top_n: int, storage) -> Dict[str, Any]:
         """Process single file with pre-loaded content using ThreadPoolExecutor."""

@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 import argparse
+from tqdm import tqdm
 from src.file_loader import FileLoader
 from src.process_queue import ProcessQueue
 
@@ -33,7 +34,7 @@ def main():
     extensions = {f".{ext.lstrip('.')}" for ext in args.extensions} if args.extensions else None
     
     # Load all files into memory
-    print(f"📁 Loading files from: {args.path}")
+    # Loading message will be shown after files are loaded
     loader = FileLoader(
         extensions=extensions,
         max_file_size=args.max_file_size,
@@ -46,7 +47,7 @@ def main():
         print("❌ No qualifying files found", file=sys.stderr)
         sys.exit(1)
     
-    print(f"📊 Loaded {len(files_data)} files into memory")
+    tqdm.write(f"📁 Loaded {len(files_data)} files from: {args.path}")
     
     # Process files concurrently
     try:
@@ -57,7 +58,7 @@ def main():
             if args.output:
                 with open(args.output, 'w', encoding='utf-8') as f:
                     f.write(result)
-                print(f"✅ Results saved to: {args.output}")
+                tqdm.write(f"✅ Results saved to: {args.output}")
             else:
                 print(result)
                 

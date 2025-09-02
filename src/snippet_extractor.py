@@ -11,16 +11,9 @@ class SnippetExtractor:
             raise ConfigurationError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
     
     async def extract_from_content(self, filename: str, content: str, 
-                                   top_n: int = 10, storage=None) -> dict:
-        """Extract snippets from pre-loaded content - no file I/O."""
+                                   storage: SnippetStorage, top_n: int = 10) -> bool:
+        """Extract snippets from pre-loaded content using provided storage. Returns True on success."""
         try:
-            # Use provided storage or create own
-            own_storage = False
-            if storage is None:
-                storage = SnippetStorage()
-                storage.run(workers=1)
-                own_storage = True
-            
             # Create agent
             system_prompt = SYSTEM_PROMPT.format(top_n=top_n)
             agent = Agent(
@@ -38,35 +31,8 @@ class SnippetExtractor:
             
             # Run agent
             result = await agent.run(user_prompt)
+            return result.get("success", False)
             
-            if own_storage and result["success"]:
-                result["response"] = storage.to_file()
-                result["snippets_extracted"] = storage.get_snippet_count()
-                
-            return result
-            
-        except ConfigurationError as e:
-            return {
-                "success": False,
-                "response": f"Configuration error: {str(e)}",
-                "error": "ConfigurationError"
-            }
-        except ConnectionError as e:
-            return {
-                "success": False,
-                "response": f"Connection failed (Docker/network issue): {str(e)}",
-                "error": "ConnectionError"
-            }
-        except ExecutionError as e:
-            return {
-                "success": False,
-                "response": f"Execution failed: {str(e)}",
-                "error": "ExecutionError"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "response": f"Error processing {filename}: {str(e)}",
-                "error": type(e).__name__
-            }
+        except (ConfigurationError, ConnectionError, ExecutionError, Exception):
+            return False
     

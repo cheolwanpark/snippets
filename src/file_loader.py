@@ -149,7 +149,8 @@ class FileLoader:
                     extension=file_info.extension
                 ))
             except Exception as e:
-                print(f"⚠️ Failed to load {file_info.path}: {e}")
+                from tqdm import tqdm
+                tqdm.write(f"⚠️ Failed to load {file_info.path}: {e}")
                 
         return files_data
     
