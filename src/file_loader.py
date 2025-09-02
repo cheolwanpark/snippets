@@ -91,7 +91,7 @@ class FileLoader:
                 extension=file_path.suffix
             )]
         except (OSError, PermissionError):
-            # Skip files we can't read
+            # Skip files we can't access
             return []
     
     def _analyze_directory(self, dir_path: Path) -> List[FileInfo]:
@@ -117,7 +117,7 @@ class FileLoader:
                                 extension=file_path.suffix
                             ))
                         except (OSError, PermissionError):
-                            # Skip files we can't read
+                            # Skip files we can't access
                             continue
         except (OSError, PermissionError):
             # Handle directory permission errors

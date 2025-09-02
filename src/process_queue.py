@@ -2,7 +2,6 @@ import asyncio
 import time
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
-from claude_agent_toolkit import ConnectionError
 from tqdm import tqdm
 from .file_loader import FileData
 from .snippet_extractor import SnippetExtractor  
@@ -37,12 +36,18 @@ class ProcessQueue:
         
         # Process with progress updates
         async def process_with_progress(file_data):
-            result = await self._process_file(file_data, top_n, storage)
-            pbar.update(1)
-            # Update description with current file (truncated)
-            filename = file_data.filename.split('/')[-1][:30]
-            pbar.set_postfix(file=filename, refresh=False)
-            return result
+            from .exception_handler import error_handler
+            try:
+                result = await self._process_file(file_data, top_n, storage)
+                pbar.update(1)
+                # Update description with current file (truncated)
+                filename = file_data.filename.split('/')[-1][:30]
+                pbar.set_postfix(file=filename, refresh=False)
+                return result
+            except Exception as e:
+                error_handler.collect_processing_error(e, file_data.filename, "processing")
+                pbar.update(1)
+                return False
         
         tasks = [process_with_progress(file_data) for file_data in files_data]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -67,29 +72,25 @@ class ProcessQueue:
     
     def _run_extractor_sync(self, file_data: FileData, top_n: int, storage) -> bool:
         """Run snippet extraction synchronously in a thread - bypasses Docker blocking."""
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         try:
-            # Create new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                extractor = SnippetExtractor()
-                success = loop.run_until_complete(
-                    extractor.extract_from_content(
-                        filename=file_data.filename,
-                        content=file_data.content,
-                        storage=storage,
-                        top_n=top_n
-                    )
+            extractor = SnippetExtractor()
+            result = loop.run_until_complete(
+                extractor.extract_from_content(
+                    filename=file_data.filename,
+                    content=file_data.content,
+                    storage=storage,
+                    top_n=top_n
                 )
-                return success
-            finally:
-                loop.close()
-                
-        except (ConnectionError, Exception):
-            return False
+            )
+            return result
+        finally:
+            loop.close()
     
-    async def _process_file(self, file_data: FileData, top_n: int, storage) -> Dict[str, Any]:
+    async def _process_file(self, file_data: FileData, top_n: int, storage) -> bool:
         """Process single file with pre-loaded content using ThreadPoolExecutor."""
         async with self.semaphore:
             # Run the blocking Docker operation in a separate thread
