@@ -1,11 +1,15 @@
 import asyncio
+import logging
 import time
-from typing import List, Dict, Any
+from typing import List
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from .file_loader import FileData
-from .snippet_extractor import SnippetExtractor  
-from .snippet_storage import SnippetStorage
+from ..utils.file_loader import FileData
+from ..snippet.snippet_storage import SnippetStorage
+from ..agents.snippet_extractor import SnippetExtractor
+
+
+logger = logging.getLogger("snippet_extractor")
 
 
 class ProcessQueue:
@@ -15,14 +19,17 @@ class ProcessQueue:
         self.max_concurrency = max_concurrency
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.executor = ThreadPoolExecutor(max_workers=max_concurrency)
+        self.errors: List[str] = []
     
     async def process(self, files_data: List[FileData], top_n: int = 10) -> str:
         """Process pre-loaded files concurrently and return results."""
         start_time = time.time()
-        
-        # Initialize shared storage
+
+        # Clear previous errors for repeated runs
+        self.errors.clear()
+
+        # Initialize shared storage; no background runner is required
         storage = SnippetStorage()
-        storage.run(workers=self.max_concurrency * 2)
         
         # Create progress bar with detailed formatting
         pbar = tqdm(
@@ -36,7 +43,6 @@ class ProcessQueue:
         
         # Process with progress updates
         async def process_with_progress(file_data):
-            from .exception_handler import error_handler
             try:
                 result = await self._process_file(file_data, top_n, storage)
                 pbar.update(1)
@@ -45,7 +51,8 @@ class ProcessQueue:
                 pbar.set_postfix(file=filename, refresh=False)
                 return result
             except Exception as e:
-                error_handler.collect_processing_error(e, file_data.filename, "processing")
+                logger.exception("Failed to process %s", file_data.filename)
+                self.errors.append(f"{file_data.filename}: {e}")
                 pbar.update(1)
                 return False
         

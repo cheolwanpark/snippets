@@ -1,7 +1,16 @@
+import logging
 import os
-from claude_agent_toolkit import Agent, ConfigurationError
-from .snippet_storage import SnippetStorage
+from claude_agent_toolkit import (
+    Agent,
+    ConfigurationError,
+    ConnectionError as ClaudeConnectionError,
+    ExecutionError,
+)
+from ..snippet.snippet_storage import SnippetStorage
 from .prompt import SYSTEM_PROMPT, PROMPT
+
+
+logger = logging.getLogger("snippet_extractor")
 
 
 class SnippetExtractor:
@@ -29,6 +38,22 @@ class SnippetExtractor:
         )
         
         # Run agent
-        result = await agent.run(user_prompt)
-        return result.get("success", False)
+        try:
+            result = await agent.run(user_prompt)
+        except (ConfigurationError, ClaudeConnectionError, ExecutionError) as exc:
+            logger.error("Agent.run failed for %s: %s", filename, exc)
+            return False
+        except Exception:
+            logger.exception("Unexpected failure during Agent.run for %s", filename)
+            return False
+
+        if not isinstance(result, str):
+            logger.error(
+                "Agent.run returned unsupported type for %s: %s",
+                filename,
+                type(result).__name__,
+            )
+            return False
+
+        return bool(result.strip())
     

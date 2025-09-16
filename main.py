@@ -1,11 +1,14 @@
+import argparse
 import asyncio
+import logging
 import os
 import sys
-import argparse
 from tqdm import tqdm
-from src.file_loader import FileLoader
-from src.process_queue import ProcessQueue
-from src.exception_handler import error_handler
+from src.utils.file_loader import FileLoader
+from src.orchestration import ProcessQueue
+
+
+logger = logging.getLogger("snippet_extractor")
 
 
 def main():
@@ -52,12 +55,9 @@ def main():
     
     # Process files concurrently
     try:
-        # Clear any previous errors
-        error_handler.clear_errors()
-        
         with ProcessQueue(max_concurrency=args.concurrency) as queue:
             result = asyncio.run(queue.process(files_data, args.top_n))
-            
+
             # Output results
             if args.output:
                 with open(args.output, 'w', encoding='utf-8') as f:
@@ -65,20 +65,20 @@ def main():
                 tqdm.write(f"✅ Results saved to: {args.output}")
             else:
                 print(result)
-            
-            # Display error summary if any errors occurred
-            error_report = error_handler.format_error_report()
-            if error_report:
-                tqdm.write(error_report)
-                
+
+            if queue.errors:
+                tqdm.write("\n⚠️  Error Summary:")
+                for message in queue.errors[:5]:
+                    tqdm.write(f"  • {message}")
+                if len(queue.errors) > 5:
+                    tqdm.write(f"  ... and {len(queue.errors) - 5} more")
+
     except KeyboardInterrupt:
         print("\n⚠️ Processing interrupted", file=sys.stderr)
         sys.exit(1)
-    except Exception as e:
-        # Handle any uncaught exceptions at the top level
-        error_handler.handle_error(e, {"stage": "main_processing", "operation": "full_pipeline"})
-        error_report = error_handler.format_error_report()
-        print(f"\n❌ Fatal error occurred:\n{error_report}", file=sys.stderr)
+    except Exception:
+        logger.exception("Fatal error during snippet extraction")
+        print("\n❌ Fatal error occurred. See log for details.", file=sys.stderr)
         sys.exit(1)
 
 
