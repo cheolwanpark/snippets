@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from typing import Sequence
 
 from qdrant_client import QdrantClient, models
 
-from ..snippet.snippet_storage import Snippet
+from ..snippet import Snippet
 from .config import DBConfig, EmbeddingConfig
 from .embedding import GeminiEmbeddingClient
 
 logger = logging.getLogger("snippet_extractor")
+
 
 class SnippetVectorWriter:
     """Persist snippets and their embeddings into a Qdrant collection."""
@@ -35,8 +37,8 @@ class SnippetVectorWriter:
         if not snippet_list:
             return 0
 
-        texts = [self._combine_fields(snippet) for snippet in snippet_list]
-        vectors = self._embedder.embed(texts)
+        embedding_inputs = [self._embedding_input(snippet) for snippet in snippet_list]
+        vectors = self._embedder.embed(embedding_inputs)
 
         if len(vectors) != len(snippet_list):
             logger.error(
@@ -44,14 +46,13 @@ class SnippetVectorWriter:
                 len(snippet_list),
                 len(vectors),
             )
-            # Only proceed with min length to avoid crashing the pipeline.
             limit = min(len(snippet_list), len(vectors))
             snippet_list = snippet_list[:limit]
             vectors = vectors[:limit]
-            texts = texts[:limit]
+            embedding_inputs = embedding_inputs[:limit]
 
         if not vectors:
-            logger.warning("No vectors produced for %d snippets", len(texts))
+            logger.warning("No vectors produced for %d snippets", len(embedding_inputs))
             return 0
 
         vector_size = len(vectors[0])
@@ -65,19 +66,20 @@ class SnippetVectorWriter:
 
         for start in range(0, len(snippet_list), batch_size):
             snippet_batch = snippet_list[start : start + batch_size]
-            text_batch = texts[start : start + batch_size]
+            input_batch = embedding_inputs[start : start + batch_size]
             vector_batch = vectors[start : start + batch_size]
 
-            points = [
-                models.PointStruct(
-                    id=str(uuid.uuid4()),
-                    vector=vector,
-                    payload=self._build_payload(snippet, combined_text),
+            points: list[models.PointStruct] = []
+            for snippet, vector, embedding_input in zip(snippet_batch, vector_batch, input_batch):
+                embedding_key = self._embedding_key(embedding_input)
+                payload = self._build_payload(snippet, embedding_input, embedding_key)
+                points.append(
+                    models.PointStruct(
+                        id=self._point_id(embedding_input),
+                        vector=vector,
+                        payload=payload,
+                    )
                 )
-                for snippet, vector, combined_text in zip(
-                    snippet_batch, vector_batch, text_batch
-                )
-            ]
 
             if not points:
                 continue
@@ -110,21 +112,26 @@ class SnippetVectorWriter:
         )
 
     @staticmethod
-    def _combine_fields(snippet: Snippet) -> str:
-        return "\n".join(
-            [
-                snippet.title,
-                snippet.description,
-                snippet.language,
-                snippet.filename,
-                snippet.code,
-            ]
-        )
+    def _embedding_input(snippet: Snippet) -> str:
+        return f"{snippet.title}\n\n{snippet.description}"
 
     @staticmethod
-    def _build_payload(snippet: Snippet, combined_text: str) -> dict[str, str]:
-        payload = snippet.model_dump()
-        payload["combined_text"] = combined_text
+    def _embedding_key(embedding_input: str) -> str:
+        return hashlib.sha256(embedding_input.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _point_id(embedding_input: str) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, embedding_input))
+
+    @staticmethod
+    def _build_payload(
+        snippet: Snippet,
+        embedding_input: str,
+        embedding_key: str,
+    ) -> dict[str, object]:
+        payload = snippet.model_dump(exclude_none=True)
+        payload["embedding_input"] = embedding_input
+        payload["embedding_key"] = embedding_key
         return payload
 
 

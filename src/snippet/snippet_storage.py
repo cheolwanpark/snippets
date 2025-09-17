@@ -1,26 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Annotated, Dict, List
 
 from claude_agent_toolkit import BaseTool, tool
-from pydantic import BaseModel, field_validator
 
-
-class Snippet(BaseModel):
-    """Structured representation of an extracted snippet."""
-
-    title: str
-    description: str
-    language: str
-    code: str
-    filename: str
-
-    @field_validator("title", "description", "language", "code", "filename", mode="before")
-    @classmethod
-    def _strip_strings(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+from .model import Snippet
 
 
 class SnippetStorage(BaseTool):
@@ -28,54 +12,58 @@ class SnippetStorage(BaseTool):
         super().__init__()
         self.state: Dict[str, Dict[str, List[Snippet]]] = {"snippets": {}}
 
-    def register_file(self, filename: str) -> None:
-        """Ensure storage tracks the given filename even if no snippets are added."""
-        snippets_by_file: Dict[str, List[Snippet]] = self.state["snippets"]
-        if filename not in snippets_by_file:
-            snippets_by_file[filename] = []
+    def register_file(self, path: str) -> None:
+        """Ensure storage tracks the given path even if no snippets are added."""
+        snippets_by_path: Dict[str, List[Snippet]] = self.state["snippets"]
+        if path not in snippets_by_path:
+            snippets_by_path[path] = []
 
-    @tool(description="Add extracted code snippet with structured format")
+    @tool(description="Store an extracted code snippet for later processing")
     async def add_snippet(
         self,
-        title: str,
-        description: str,
-        language: str,
-        code: str,
-        filename: str,
+        *,
+        title: Annotated[str, "Descriptive title under 80 characters"],
+        description: Annotated[
+            str,
+            "2-4 sentence explanation of what the snippet does and why it matters",
+        ],
+        language: Annotated[str, "Programming language name (for example, 'Python')"],
+        code: Annotated[str, "Verbatim code snippet to persist"],
+        path: Annotated[str, "Repository-relative path of the source file"],
     ) -> Dict[str, Any]:
-        """Add a code snippet to the storage with validation."""
-        if not title or not description or not language or not code or not filename:
+        """Add a code snippet to the storage with lightweight validation."""
+        if not title or not description or not language or not code or not path:
             return {
                 "added": False,
-                "error": "All fields (title, description, language, code, filename) are required",
+                "error": "All fields (title, description, language, code, path) are required",
             }
 
-        self.register_file(filename)
+        self.register_file(path)
 
         snippet = Snippet(
             title=title,
             description=description,
             language=language,
             code=code,
-            filename=filename,
+            path=path,
         )
 
-        self.state["snippets"][filename].append(snippet)
+        self.state["snippets"][path].append(snippet)
 
         total_count = self.get_snippet_count()
 
         return {
             "added": True,
-            "file": filename,
-            "file_count": len(self.state["snippets"][filename]),
+            "path": path,
+            "file_count": len(self.state["snippets"][path]),
             "total_count": total_count,
             "title": snippet.title,
         }
 
     def to_file(self) -> str:
         """Convert accumulated snippets from all files into formatted output string."""
-        snippets_by_file: Dict[str, List[Snippet]] = self.state["snippets"]
-        if not snippets_by_file:
+        snippets_by_path: Dict[str, List[Snippet]] = self.state["snippets"]
+        if not snippets_by_path:
             return (
                 "-----\n\n"
                 "TITLE: No Qualifying Snippets Found\n"
@@ -89,18 +77,18 @@ class SnippetStorage(BaseTool):
 
         output_parts: List[str] = []
 
-        for filename, snippets in snippets_by_file.items():
+        for path, snippets in snippets_by_path.items():
             if not snippets:
                 output_parts.extend(
                     [
                         "-----\n\n",
                         "TITLE: No Qualifying Snippets Found\n",
                         (
-                            f"DESCRIPTION: The file ({filename}) does not contain any "
+                            f"DESCRIPTION: The file ({path}) does not contain any "
                             "library/API usage patterns or best-practice implementations that meet "
                             "the extraction criteria.\n"
                         ),
-                        f"SOURCE: {filename}\n",
+                        f"SOURCE: {path}\n",
                         "LANGUAGE: Unknown\n",
                         "CODE:\n\n",
                         "# No qualifying snippets found in this file.\n\n",
@@ -114,7 +102,7 @@ class SnippetStorage(BaseTool):
                         "-----\n\n",
                         f"TITLE: {snippet.title}\n",
                         f"DESCRIPTION: {snippet.description}\n",
-                        f"SOURCE: {snippet.filename}\n",
+                        f"SOURCE: {snippet.path}\n",
                         f"LANGUAGE: {snippet.language}\n",
                         "CODE:\n",
                         f"```\n{snippet.code}\n```\n\n",
@@ -133,8 +121,8 @@ class SnippetStorage(BaseTool):
 
     def get_all_snippets(self) -> List[Snippet]:
         """Return all stored snippets as a flat list."""
-        snippets_by_file = self.state["snippets"]
-        return [snippet for snippets in snippets_by_file.values() for snippet in snippets]
+        snippets_by_path = self.state["snippets"]
+        return [snippet for snippets in snippets_by_path.values() for snippet in snippets]
 
     def clear_snippets(self) -> None:
         """Clear all stored snippets."""

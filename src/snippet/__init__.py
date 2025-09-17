@@ -1,5 +1,6 @@
 """Snippet data storage and related helpers."""
 
-from .snippet_storage import Snippet, SnippetStorage
+from .model import Snippet
+from .snippet_storage import SnippetStorage
 
 __all__ = ["Snippet", "SnippetStorage"]

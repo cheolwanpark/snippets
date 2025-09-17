@@ -6,7 +6,7 @@ import os
 import sys
 from typing import Sequence
 
-from src.snippet.snippet_storage import Snippet
+from src.snippet import Snippet
 from src.vectordb.config import DBConfig, EmbeddingConfig
 from src.vectordb.reader import SnippetVectorReader
 
@@ -81,6 +81,12 @@ def build_reader(args: argparse.Namespace) -> SnippetVectorReader:
     )
 
 
+def build_source(snippet: Snippet) -> str:
+    if snippet.repo:
+        return f"{snippet.repo}:{snippet.path}"
+    return snippet.path
+
+
 def format_snippets(snippets: Sequence[Snippet]) -> str:
     if not snippets:
         return "List of Snippets (0)\nNo results found."
@@ -92,7 +98,7 @@ def format_snippets(snippets: Sequence[Snippet]) -> str:
                 "",
                 f"{index}. {snippet.title}",
                 f"   Description: {snippet.description}",
-                f"   Source: {snippet.filename}",
+                f"   Source: {build_source(snippet)}",
                 f"   Language: {snippet.language}",
                 "   Code:",
                 "   ```",

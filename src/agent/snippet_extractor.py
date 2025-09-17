@@ -7,7 +7,8 @@ from claude_agent_toolkit import (
     ConnectionError as ClaudeConnectionError,
     ExecutionError,
 )
-from ..snippet.snippet_storage import SnippetStorage
+
+from ..snippet import SnippetStorage
 from .prompt import SYSTEM_PROMPT, PROMPT
 
 
@@ -15,8 +16,8 @@ logger = logging.getLogger("snippet_extractor")
 
 
 class SnippetExtractor:
-    def __init__(self):
-        self.oauth_token = os.getenv('CLAUDE_CODE_OAUTH_TOKEN')
+    def __init__(self) -> None:
+        self.oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
         if not self.oauth_token:
             raise ConfigurationError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
 
@@ -37,45 +38,43 @@ class SnippetExtractor:
 
     async def extract_from_content(
         self,
-        filename: str,
+        *,
+        path: str,
         content: str,
         storage: SnippetStorage,
     ) -> bool:
         """Extract snippets from pre-loaded content using provided storage. Returns True on success."""
         top_n = self._calculate_top_n(content)
         if top_n <= 0:
-            logger.debug("Skipping extraction for %s due to empty content", filename)
+            logger.debug("Skipping extraction for %s due to empty content", path)
             return True
 
-        # Create agent
         system_prompt = SYSTEM_PROMPT.format(top_n=top_n)
         agent = Agent(
             oauth_token=self.oauth_token,
             system_prompt=system_prompt,
-            tools=[storage]
+            tools=[storage],
         )
 
-        # Format prompt with pre-loaded content
         user_prompt = PROMPT.format(
-            filename=filename,
+            path=path,
             top_n=top_n,
-            file_content=content
+            file_content=content,
         )
 
-        # Run agent
         try:
             result = await agent.run(user_prompt)
         except (ConfigurationError, ClaudeConnectionError, ExecutionError) as exc:
-            logger.error("Agent.run failed for %s: %s", filename, exc)
+            logger.error("Agent.run failed for %s: %s", path, exc)
             return False
         except Exception:
-            logger.exception("Unexpected failure during Agent.run for %s", filename)
+            logger.exception("Unexpected failure during Agent.run for %s", path)
             return False
 
         if not isinstance(result, str):
             logger.error(
                 "Agent.run returned unsupported type for %s: %s",
-                filename,
+                path,
                 type(result).__name__,
             )
             return False

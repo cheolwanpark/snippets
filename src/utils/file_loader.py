@@ -13,7 +13,7 @@ class FileInfo(NamedTuple):
 class FileData(NamedTuple):
     """Pre-loaded file data for async processing."""
     path: str
-    filename: str
+    relative_path: str
     content: str
     size: int
     extension: str
@@ -137,13 +137,17 @@ class FileLoader:
         file_infos = self.detect_files(path)
         files_data = []
         
+        base_input = Path(path).resolve()
+        base_dir = base_input.parent if base_input.is_file() else base_input
+        
         for file_info in file_infos:
             try:
                 with open(file_info.path, 'r', encoding='utf-8') as f:
                     content = f.read()
+                relative_path = Path(os.path.relpath(file_info.path, start=str(base_dir))).as_posix()
                 files_data.append(FileData(
                     path=file_info.path,
-                    filename=os.path.basename(file_info.path),
+                    relative_path=relative_path,
                     content=content,
                     size=len(content),  # Use actual content size
                     extension=file_info.extension

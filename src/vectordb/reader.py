@@ -5,13 +5,13 @@ from typing import List, Sequence
 
 from qdrant_client import QdrantClient, models
 
-from ..snippet.snippet_storage import Snippet
+from ..snippet import Snippet
 from .config import DBConfig, EmbeddingConfig
 from .embedding import GeminiEmbeddingClient
 
 logger = logging.getLogger("snippet_extractor")
 
-REQUIRED_SNIPPET_FIELDS = ("title", "description", "language", "code", "filename")
+REQUIRED_SNIPPET_FIELDS = ("title", "description", "language", "code", "path")
 
 
 class SnippetVectorReader:
@@ -89,7 +89,7 @@ class SnippetVectorReader:
             if not isinstance(payload, dict):
                 continue
 
-            snippet_data = {}
+            snippet_data: dict[str, object] = {}
             missing_field = False
             for field in REQUIRED_SNIPPET_FIELDS:
                 value = payload.get(field)
@@ -101,6 +101,9 @@ class SnippetVectorReader:
             if missing_field:
                 logger.debug("Skipping point %s due to missing fields", getattr(point, "id", "?"))
                 continue
+
+            if "repo" in payload:
+                snippet_data["repo"] = payload["repo"]
 
             try:
                 snippets.append(Snippet(**snippet_data))

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence, Set, Union
 from tqdm import tqdm
 
 from ..agent.snippet_extractor import SnippetExtractor
-from ..snippet.snippet_storage import Snippet, SnippetStorage
+from ..snippet import Snippet, SnippetStorage
 from ..utils.file_loader import FileData, FileLoader
 
 
@@ -45,7 +45,7 @@ class ExtractionPipeline:
         files_data = loader.load_files(path)
         self.storage.clear_snippets()
         for file_data in files_data:
-            self.storage.register_file(file_data.filename)
+            self.storage.register_file(file_data.relative_path)
 
         if files_data:
             tqdm.write(f"📁 Loaded {len(files_data)} files from: {path}")
@@ -103,7 +103,7 @@ class ExtractionPipeline:
         )
 
         async def process_with_progress(file_data: FileData) -> bool:
-            filename_display = file_data.filename.split("/")[-1][:30]
+            filename_display = file_data.relative_path.split("/")[-1][:30]
             async with semaphore:
                 result = await self._process_single_file(file_data)
             pbar.update(1)
@@ -140,8 +140,8 @@ class ExtractionPipeline:
                 file_data,
             )
         except Exception as exc:  # pragma: no cover - best effort logging
-            logger.exception("Failed to process %s", file_data.filename)
-            self.errors.append(f"{file_data.filename}: {exc}")
+            logger.exception("Failed to process %s", file_data.relative_path)
+            self.errors.append(f"{file_data.relative_path}: {exc}")
             return False
 
     def _run_extractor_sync(self, file_data: FileData) -> bool:
@@ -151,7 +151,7 @@ class ExtractionPipeline:
             extractor = SnippetExtractor()
             return loop.run_until_complete(
                 extractor.extract_from_content(
-                    filename=file_data.filename,
+                    path=file_data.relative_path,
                     content=file_data.content,
                     storage=self.storage,
                 )
