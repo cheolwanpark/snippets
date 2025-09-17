@@ -75,7 +75,7 @@ def main() -> None:
         "--google-api-key",
         dest="google_api_key",
         default=None,
-        help="Google Gemini API key (defaults to GEMINI_API_KEY/GOOGLE_API_KEY env variables)",
+        help="Google Gemini API key (defaults to GOOGLE_API_KEY env variable)",
     )
     parser.add_argument(
         "--branch",

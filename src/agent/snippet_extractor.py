@@ -6,6 +6,7 @@ from claude_agent_toolkit import (
     ConfigurationError,
     ConnectionError as ClaudeConnectionError,
     ExecutionError,
+    ExecutorType,
 )
 
 from ..snippet import SnippetStorage
@@ -18,6 +19,7 @@ logger = logging.getLogger("snippet_extractor")
 class SnippetExtractor:
     def __init__(self) -> None:
         self.oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
+        self.use_subprocess = os.getenv("USE_SUBPROCESS", "false").lower() == "true"
         if not self.oauth_token:
             raise ConfigurationError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
 
@@ -54,6 +56,7 @@ class SnippetExtractor:
             oauth_token=self.oauth_token,
             system_prompt=system_prompt,
             tools=[storage],
+            executor=ExecutorType.SUBPROCESS if self.use_subprocess else ExecutorType.DOCKER,
         )
 
         user_prompt = PROMPT.format(

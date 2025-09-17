@@ -8,8 +8,10 @@ import shutil
 import subprocess
 import tempfile
 import os
+import re
 from pathlib import Path
 from typing import Iterable, Sequence
+from urllib.parse import quote
 
 
 logger = logging.getLogger("snippet_extractor")
@@ -34,7 +36,7 @@ class GitHubRepo:
         include_patterns: Sequence[str] | None = None,
         github_token: str | None = None,
     ) -> None:
-        self.url = url
+        self.url = url.strip()
         self.branch = branch or "main"
         if isinstance(include_patterns, str):
             self.include_patterns: tuple[str, ...] = (include_patterns,)
@@ -84,6 +86,21 @@ class GitHubRepo:
     def _clone_repository(self, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
 
+        env = os.environ.copy()
+
+        clone_url = self.url
+        raw_token = self.github_token if self.github_token is not None else os.getenv("GITHUB_TOKEN")
+        token = (raw_token or "").strip()
+        if token:
+            quoted_token = quote(token, safe="")
+            # Using x-access-token as the username works reliably
+            clone_url = re.sub(
+                r"^https://",
+                f"https://x-access-token:{quoted_token}@",
+                self.url,
+            )
+            logger.debug("Authenticating GitHub clone with provided token")
+
         cmd = [
             "git",
             "clone",
@@ -92,14 +109,9 @@ class GitHubRepo:
             "--branch",
             self.branch,
             "--single-branch",
-            self.url,
+            clone_url,
             str(destination),
         ]
-
-        env = None
-        if self.github_token:
-            env = os.environ.copy()
-            env["GIT_HTTP_EXTRAHEADER"] = f"Authorization: Bearer {self.github_token}"
 
         logger.debug(
             "Cloning repository %s (branch=%s) into %s", self.url, self.branch, destination

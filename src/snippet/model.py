@@ -12,6 +12,9 @@ class Snippet(BaseModel):
     code: str
     path: str
     repo: str | None = None
+    repo_url: str | None = None
+    repo_name: str | None = None
+    ingest_id: str | None = None
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 

@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ./.env.example
+      - ./.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - qdrant
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["sh", "-c", "rq worker --with-scheduler $${RQ_QUEUE_NAME:-repo-ingest}"]
+    env_file:
+      - ./.env.example
+      - ./.env
+    depends_on:
+      - redis
+      - qdrant
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  qdrant_storage:

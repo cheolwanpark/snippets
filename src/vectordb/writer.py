@@ -58,9 +58,6 @@ class SnippetVectorWriter:
         vector_size = len(vectors[0])
         self._ensure_collection(vector_size)
 
-        if not vectors:
-            return 0
-
         total_written = 0
         batch_size = max(1, self.db_config.upsert_batch_size)
 
@@ -98,18 +95,29 @@ class SnippetVectorWriter:
                 return
             except Exception:  # pragma: no cover - defensive fall back
                 exists = False
-        if exists:
-            return
+        if not exists:
+            logger.info(
+                "Creating Qdrant collection %s with vector size %d",
+                self.collection_name,
+                vector_size,
+            )
+            self._client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(size=vector_size, distance=self.distance),
+            )
 
-        logger.info(
-            "Creating Qdrant collection %s with vector size %d",
-            self.collection_name,
-            vector_size,
-        )
-        self._client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=models.VectorParams(size=vector_size, distance=self.distance),
-        )
+        self._ensure_payload_indexes()
+
+    def _ensure_payload_indexes(self) -> None:
+        """Ensure payload indexes needed for metadata querying exist."""
+        try:
+            self._client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="repo_name",
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+        except Exception as exc:  # pragma: no cover - best effort guard
+            logger.debug("Skipping repo_name index creation: %s", exc)
 
     @staticmethod
     def _embedding_input(snippet: Snippet) -> str:

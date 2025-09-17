@@ -50,9 +50,7 @@ def parse_args() -> argparse.Namespace:
         "--google-api-key",
         dest="google_api_key",
         default=None,
-        help=(
-            "Override Google Gemini API key (defaults to GEMINI_API_KEY or GOOGLE_API_KEY env variables)"
-        ),
+        help="Override Google Gemini API key (defaults to GOOGLE_API_KEY env variable)",
     )
     parser.add_argument(
         "--lambda-coef",

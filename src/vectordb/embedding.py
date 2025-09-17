@@ -24,17 +24,13 @@ class GeminiEmbeddingClient:
         self.output_dimensionality = self.config.output_dimensionality
 
         effective_kwargs: MutableMapping[str, Any] = dict(self.config.client_kwargs or {})
-        resolved_key = (
-            self.config.api_key
-            or os.getenv("GEMINI_API_KEY")
-            or os.getenv("GOOGLE_API_KEY")
-        )
+        resolved_key = self.config.api_key or os.getenv("GOOGLE_API_KEY")
 
         if resolved_key:
             effective_kwargs.setdefault("api_key", resolved_key)
         elif not effective_kwargs.get("vertexai"):
             raise ValueError(
-                "Gemini API key missing. Provide api_key explicitly or set GEMINI_API_KEY/GOOGLE_API_KEY."
+                "Gemini API key missing. Provide api_key explicitly or set GOOGLE_API_KEY."
             )
 
         self._client = genai.Client(**effective_kwargs)
