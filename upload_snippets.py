@@ -10,6 +10,7 @@ from src.orchestration.write_pipeline import (
     is_github_url,
     write_snippets_to_vectordb,
 )
+from src.utils import GitHubRepo
 from src.vectordb.config import DBConfig, EmbeddingConfig
 
 
@@ -24,11 +25,11 @@ def _parse_extensions(raw: Optional[Sequence[str]]) -> Optional[Sequence[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract snippets from a directory and upload them to Qdrant"
+        description="Extract snippets from a GitHub repository and upload them to Qdrant"
     )
     parser.add_argument(
-        "path_or_url",
-        help="Directory to scan or GitHub repository URL (https://, ssh, git@)",
+        "repo_url",
+        help="GitHub repository URL (https://, ssh, git@)",
     )
     parser.add_argument(
         "--top-n",
@@ -85,7 +86,7 @@ def main() -> None:
     parser.add_argument(
         "--branch",
         default=None,
-        help="Branch to clone when path_or_url is a GitHub repository",
+        help="Branch to clone when fetching the GitHub repository",
     )
     parser.add_argument(
         "--include-pattern",
@@ -93,20 +94,23 @@ def main() -> None:
         action="append",
         help="Glob pattern to keep when cloning from GitHub (can be repeated)",
     )
+    parser.add_argument(
+        "--github-token",
+        dest="github_token",
+        default=None,
+        help="Personal access token for private GitHub repositories (defaults to GITHUB_TOKEN env variable)",
+    )
 
     args = parser.parse_args()
 
-    path_or_url = args.path_or_url
-    if is_github_url(path_or_url):
-        resolved_target = path_or_url
-    else:
-        resolved_target = os.path.abspath(path_or_url)
-        if not os.path.exists(resolved_target):
-            parser.error(f"Directory does not exist: {resolved_target}")
+    repo_url = args.repo_url
+    if not is_github_url(repo_url):
+        parser.error("Only GitHub repository URLs are supported.")
 
     qdrant_api_key = args.qdrant_api_key or os.getenv("QDRANT_API_KEY")
     qdrant_url = args.qdrant_url or os.getenv("QDRANT_URL")
     google_api_key = args.google_api_key or os.getenv("GOOGLE_API_KEY")
+    github_token = args.github_token or os.getenv("GITHUB_TOKEN")
 
     db_config = DBConfig(
         url=qdrant_url,
@@ -119,18 +123,26 @@ def main() -> None:
     extensions = _parse_extensions(args.extensions)
 
     try:
-        write_snippets_to_vectordb(
-            resolved_target,
-            db_config,
-            embedding_config=embedding_config,
-            top_n=args.top_n,
-            max_file_size=args.max_file_size,
-            include_tests=args.include_tests,
-            extensions=extensions,
-            concurrency=args.concurrency,
+        with GitHubRepo(
+            repo_url,
             branch=args.branch,
             include_patterns=args.include_patterns,
-        )
+            github_token=github_token,
+        ) as github_repo:
+            repo_path = github_repo.path
+            if repo_path is None:
+                raise RuntimeError("Failed to resolve local path for cloned repository")
+
+            write_snippets_to_vectordb(
+                repo_path,
+                db_config,
+                embedding_config=embedding_config,
+                top_n=args.top_n,
+                max_file_size=args.max_file_size,
+                include_tests=args.include_tests,
+                extensions=extensions,
+                concurrency=args.concurrency,
+            )
     except KeyboardInterrupt:
         print("\n⚠️ Operation interrupted", file=sys.stderr)
         sys.exit(1)

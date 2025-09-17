@@ -7,6 +7,7 @@ import logging
 import shutil
 import subprocess
 import tempfile
+import os
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -31,6 +32,7 @@ class GitHubRepo:
         url: str,
         branch: str | None = None,
         include_patterns: Sequence[str] | None = None,
+        github_token: str | None = None,
     ) -> None:
         self.url = url
         self.branch = branch or "main"
@@ -41,10 +43,12 @@ class GitHubRepo:
         else:
             self.include_patterns = ()
 
+        self.github_token = github_token
+
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
         self._repo_path: Path | None = None
 
-    def __enter__(self) -> Path:
+    def __enter__(self) -> "GitHubRepo":
         self._temp_dir = tempfile.TemporaryDirectory(prefix="snippets_repo_")
         base_dir = Path(self._temp_dir.name)
         repo_dir = base_dir / "repo"
@@ -58,7 +62,7 @@ class GitHubRepo:
             raise
 
         self._repo_path = repo_dir
-        return repo_dir
+        return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self.cleanup()
@@ -92,6 +96,11 @@ class GitHubRepo:
             str(destination),
         ]
 
+        env = None
+        if self.github_token:
+            env = os.environ.copy()
+            env["GIT_HTTP_EXTRAHEADER"] = f"Authorization: Bearer {self.github_token}"
+
         logger.debug(
             "Cloning repository %s (branch=%s) into %s", self.url, self.branch, destination
         )
@@ -101,6 +110,7 @@ class GitHubRepo:
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=env,
         )
 
         if result.returncode != 0:
