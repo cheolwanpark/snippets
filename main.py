@@ -1,85 +1,112 @@
 import argparse
-import asyncio
 import logging
 import os
 import sys
+
 from tqdm import tqdm
-from src.utils.file_loader import FileLoader
-from src.orchestration import ProcessQueue
+
+from src.orchestration import ExtractionPipeline
 
 
 logger = logging.getLogger("snippet_extractor")
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Extract code snippets from source files or directories')
-    parser.add_argument('path', help='Path to the source code file or directory to analyze')
-    parser.add_argument('--top-n', type=int, default=10, 
-                       help='Maximum number of snippets to extract per file (default: 10)')
-    parser.add_argument('--output', '-o', type=str, 
-                       help='Output file path (if not specified, prints to stdout)')
-    parser.add_argument('--concurrency', type=int, default=5,
-                       help='Maximum number of concurrent processing jobs (default: 5)')
-    parser.add_argument('--max-file-size', type=int, default=1048576,
-                       help='Maximum file size to process in bytes (default: 1MB)')
-    parser.add_argument('--include-tests', action='store_true',
-                       help='Include test files in processing (default: exclude)')
-    parser.add_argument('--extensions', type=str, nargs='+',
-                       help='File extensions to include (default: py js ts rs)')
-    
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extract code snippets from source files or directories"
+    )
+    parser.add_argument(
+        "path",
+        help="Path to the source code file or directory to analyze",
+    )
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=10,
+        help="Maximum number of snippets to extract per file (default: 10)",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        help="Output file path (if not specified, prints to stdout)",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=5,
+        help="Maximum number of concurrent processing jobs (default: 5)",
+    )
+    parser.add_argument(
+        "--max-file-size",
+        type=int,
+        default=1_048_576,
+        help="Maximum file size to process in bytes (default: 1MB)",
+    )
+    parser.add_argument(
+        "--include-tests",
+        action="store_true",
+        help="Include test files in processing (default: exclude)",
+    )
+    parser.add_argument(
+        "--extensions",
+        type=str,
+        nargs="+",
+        help="File extensions to include (default: py js ts rs)",
+    )
+
     args = parser.parse_args()
-    
-    # Validate path
+
     if not os.path.exists(args.path):
         print(f"Error: Path does not exist: {args.path}", file=sys.stderr)
         sys.exit(1)
-    
-    # Prepare extensions
-    extensions = {f".{ext.lstrip('.')}" for ext in args.extensions} if args.extensions else None
-    
-    # Load all files into memory
-    # Loading message will be shown after files are loaded
-    loader = FileLoader(
+
+    extensions = args.extensions if args.extensions else None
+
+    pipeline = ExtractionPipeline(
+        max_concurrency=args.concurrency,
         extensions=extensions,
         max_file_size=args.max_file_size,
-        exclude_tests=not args.include_tests
+        include_tests=args.include_tests,
     )
-    
-    files_data = loader.load_files(args.path)
-    
-    if not files_data:
-        print("❌ No qualifying files found", file=sys.stderr)
-        sys.exit(1)
-    
-    tqdm.write(f"📁 Loaded {len(files_data)} files from: {args.path}")
-    
-    # Process files concurrently
+
     try:
-        with ProcessQueue(max_concurrency=args.concurrency) as queue:
-            result = asyncio.run(queue.process(files_data, args.top_n))
-
-            # Output results
-            if args.output:
-                with open(args.output, 'w', encoding='utf-8') as f:
-                    f.write(result)
-                tqdm.write(f"✅ Results saved to: {args.output}")
-            else:
-                print(result)
-
-            if queue.errors:
-                tqdm.write("\n⚠️  Error Summary:")
-                for message in queue.errors[:5]:
-                    tqdm.write(f"  • {message}")
-                if len(queue.errors) > 5:
-                    tqdm.write(f"  ... and {len(queue.errors) - 5} more")
-
+        snippets = pipeline.run(args.path, top_n=args.top_n)
     except KeyboardInterrupt:
         print("\n⚠️ Processing interrupted", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
     except Exception:
         logger.exception("Fatal error during snippet extraction")
         print("\n❌ Fatal error occurred. See log for details.", file=sys.stderr)
         sys.exit(1)
+
+    stats = pipeline.last_run_stats or {}
+    if stats.get("total_files", 0) == 0:
+        print("❌ No qualifying files found", file=sys.stderr)
+        sys.exit(1)
+
+    output_text = pipeline.storage.to_file()
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as file_handle:
+            file_handle.write(output_text)
+        tqdm.write(f"✅ Results saved to: {args.output}")
+    else:
+        print(output_text)
+
+    if pipeline.errors:
+        tqdm.write("\n⚠️  Error Summary:")
+        for message in pipeline.errors[:5]:
+            tqdm.write(f"  • {message}")
+        if len(pipeline.errors) > 5:
+            remaining = len(pipeline.errors) - 5
+            tqdm.write(f"  ... and {remaining} more")
+
+    if snippets:
+        logger.debug("Extracted %d snippets", len(snippets))
 
 
 if __name__ == "__main__":

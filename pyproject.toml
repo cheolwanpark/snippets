@@ -7,4 +7,5 @@ requires-python = ">=3.12"
 dependencies = [
     "claude-agent-toolkit>=0.2.2",
     "tqdm>=4.66.0",
+    "pydantic>=2.5.0",
 ]

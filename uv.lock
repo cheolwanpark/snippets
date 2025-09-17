@@ -980,12 +980,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "claude-agent-toolkit" },
+    { name = "pydantic" },
     { name = "tqdm" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-toolkit", specifier = ">=0.2.2" },
+    { name = "pydantic", specifier = ">=2.5.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
 ]
 

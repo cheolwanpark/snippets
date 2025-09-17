@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Python 3.12 project with runtime code in `src/`. Agents that talk to Claude live in `src/agents/` (`snippet_extractor.py`, `prompt.py`), shared storage helpers in `src/snippet/`, and IO/utilities in `src/utils/`. `main.py` wires everything into a CLI. Keep new modules under the closest matching package; add integration demos or fixtures under `samples/`, not in `src/`.
+Python 3.12 project with runtime code in `src/`. Agents that talk to Claude now live in `src/agent/` (`snippet_extractor.py`, `prompt.py`), shared storage helpers in `src/snippet/`, and IO/utilities in `src/utils/`. `main.py` wires everything into a CLI. Keep new modules under the closest matching package; add integration demos or fixtures under `samples/`, not in `src/`.
 
 
 ## Environment & Configuration
