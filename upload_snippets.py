@@ -6,7 +6,10 @@ import os
 import sys
 from typing import Optional, Sequence
 
-from src.orchestration.write_pipeline import write_snippets_to_vectordb
+from src.orchestration.write_pipeline import (
+    is_github_url,
+    write_snippets_to_vectordb,
+)
 from src.vectordb.config import DBConfig, EmbeddingConfig
 
 
@@ -23,7 +26,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Extract snippets from a directory and upload them to Qdrant"
     )
-    parser.add_argument("directory", help="Directory to scan for source files")
+    parser.add_argument(
+        "path_or_url",
+        help="Directory to scan or GitHub repository URL (https://, ssh, git@)",
+    )
     parser.add_argument(
         "--top-n",
         type=int,
@@ -76,12 +82,27 @@ def main() -> None:
         default=None,
         help="Google Gemini API key (defaults to GEMINI_API_KEY/GOOGLE_API_KEY env variables)",
     )
+    parser.add_argument(
+        "--branch",
+        default=None,
+        help="Branch to clone when path_or_url is a GitHub repository",
+    )
+    parser.add_argument(
+        "--include-pattern",
+        dest="include_patterns",
+        action="append",
+        help="Glob pattern to keep when cloning from GitHub (can be repeated)",
+    )
 
     args = parser.parse_args()
 
-    directory = os.path.abspath(args.directory)
-    if not os.path.exists(directory):
-        parser.error(f"Directory does not exist: {directory}")
+    path_or_url = args.path_or_url
+    if is_github_url(path_or_url):
+        resolved_target = path_or_url
+    else:
+        resolved_target = os.path.abspath(path_or_url)
+        if not os.path.exists(resolved_target):
+            parser.error(f"Directory does not exist: {resolved_target}")
 
     qdrant_api_key = args.qdrant_api_key or os.getenv("QDRANT_API_KEY")
     qdrant_url = args.qdrant_url or os.getenv("QDRANT_URL")
@@ -99,7 +120,7 @@ def main() -> None:
 
     try:
         write_snippets_to_vectordb(
-            directory,
+            resolved_target,
             db_config,
             embedding_config=embedding_config,
             top_n=args.top_n,
@@ -107,6 +128,8 @@ def main() -> None:
             include_tests=args.include_tests,
             extensions=extensions,
             concurrency=args.concurrency,
+            branch=args.branch,
+            include_patterns=args.include_patterns,
         )
     except KeyboardInterrupt:
         print("\n⚠️ Operation interrupted", file=sys.stderr)
