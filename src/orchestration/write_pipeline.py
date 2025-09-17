@@ -19,7 +19,6 @@ class WritePipeline:
 
     db_config: DBConfig
     embedding_config: EmbeddingConfig
-    top_n: int = 10
     max_file_size: Optional[int] = None
     include_tests: bool = False
     extensions: Optional[Sequence[str]] = None
@@ -36,8 +35,6 @@ class WritePipeline:
     def run(
         self,
         repo_path: Union[str, Path],
-        *,
-        top_n: Optional[int] = None,
     ) -> int:
         """Run the write pipeline against a prepared GitHub repository checkout."""
 
@@ -51,8 +48,6 @@ class WritePipeline:
         self.last_written = 0
         self.last_errors = []
 
-        effective_top_n = top_n or self.top_n
-
         pipeline = ExtractionPipeline(
             max_concurrency=self.concurrency,
             extensions=self.extensions,
@@ -61,7 +56,7 @@ class WritePipeline:
         )
 
         logger.info("Processing repository at %s", repo_path)
-        snippets = pipeline.run(str(repo_path), top_n=effective_top_n)
+        snippets = pipeline.run(str(repo_path))
         self.last_errors = list(pipeline.errors)
         if not snippets:
             logger.info("No snippets extracted from %s; skipping upload", repo_path)
@@ -89,7 +84,6 @@ def write_snippets_to_vectordb(
     db_config: DBConfig,
     embedding_config: EmbeddingConfig,
     *,
-    top_n: int = 10,
     max_file_size: Optional[int] = None,
     include_tests: bool = False,
     extensions: Optional[Sequence[str]] = None,
@@ -98,7 +92,6 @@ def write_snippets_to_vectordb(
     pipeline = WritePipeline(
         db_config=db_config,
         embedding_config=embedding_config,
-        top_n=top_n,
         max_file_size=max_file_size,
         include_tests=include_tests,
         extensions=extensions,

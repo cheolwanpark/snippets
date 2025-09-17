@@ -34,7 +34,7 @@ class ExtractionPipeline:
         self.storage = SnippetStorage()
         self._last_run_stats: Optional[Dict[str, Union[int, float]]] = None
 
-    def run(self, path: str, *, top_n: int = 10) -> List[Snippet]:
+    def run(self, path: str) -> List[Snippet]:
         """Extract snippets from files under the provided path."""
         loader = FileLoader(
             extensions=self.extensions,
@@ -59,7 +59,7 @@ class ExtractionPipeline:
         if files_data:
             self.executor = ThreadPoolExecutor(max_workers=self.max_concurrency)
             try:
-                stats = asyncio.run(self._process_files(files_data, top_n))
+                stats = asyncio.run(self._process_files(files_data))
             finally:
                 self.cleanup()
         else:
@@ -82,7 +82,7 @@ class ExtractionPipeline:
             self.executor = None
 
     async def _process_files(
-        self, files_data: List[FileData], top_n: int
+        self, files_data: List[FileData]
     ) -> Dict[str, Union[int, float]]:
         assert self.executor is not None, "Executor must be initialized before processing"
 
@@ -105,7 +105,7 @@ class ExtractionPipeline:
         async def process_with_progress(file_data: FileData) -> bool:
             filename_display = file_data.filename.split("/")[-1][:30]
             async with semaphore:
-                result = await self._process_single_file(file_data, top_n)
+                result = await self._process_single_file(file_data)
             pbar.update(1)
             pbar.set_postfix(file=filename_display, refresh=False)
             return result
@@ -130,7 +130,7 @@ class ExtractionPipeline:
 
         return {"successful": successful, "failed": failed, "duration": duration}
 
-    async def _process_single_file(self, file_data: FileData, top_n: int) -> bool:
+    async def _process_single_file(self, file_data: FileData) -> bool:
         loop = asyncio.get_running_loop()
         try:
             assert self.executor is not None, "Executor must be initialized before processing"
@@ -138,14 +138,13 @@ class ExtractionPipeline:
                 self.executor,
                 self._run_extractor_sync,
                 file_data,
-                top_n,
             )
         except Exception as exc:  # pragma: no cover - best effort logging
             logger.exception("Failed to process %s", file_data.filename)
             self.errors.append(f"{file_data.filename}: {exc}")
             return False
 
-    def _run_extractor_sync(self, file_data: FileData, top_n: int) -> bool:
+    def _run_extractor_sync(self, file_data: FileData) -> bool:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -155,7 +154,6 @@ class ExtractionPipeline:
                     filename=file_data.filename,
                     content=file_data.content,
                     storage=self.storage,
-                    top_n=top_n,
                 )
             )
         finally:
@@ -181,7 +179,6 @@ class ExtractionPipeline:
 def extract_snippets_from_path(
     path: str,
     *,
-    top_n: int = 10,
     max_concurrency: int = 5,
     extensions: Optional[Sequence[str]] = None,
     max_file_size: Optional[int] = None,
@@ -194,4 +191,4 @@ def extract_snippets_from_path(
         max_file_size=max_file_size,
         include_tests=include_tests,
     )
-    return pipeline.run(path=path, top_n=top_n)
+    return pipeline.run(path=path)

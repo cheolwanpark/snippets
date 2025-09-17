@@ -32,12 +32,6 @@ def main() -> None:
         help="GitHub repository URL (https://, ssh, git@)",
     )
     parser.add_argument(
-        "--top-n",
-        type=int,
-        default=10,
-        help="Maximum snippets per file (default: 10)",
-    )
-    parser.add_argument(
         "--concurrency",
         type=int,
         default=5,
@@ -137,7 +131,6 @@ def main() -> None:
                 repo_path,
                 db_config,
                 embedding_config=embedding_config,
-                top_n=args.top_n,
                 max_file_size=args.max_file_size,
                 include_tests=args.include_tests,
                 extensions=extensions,

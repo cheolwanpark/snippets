@@ -8,7 +8,7 @@ Python 3.12 project with runtime code in `src/`. Agents that talk to Claude now 
 Install dependencies with `uv sync` (or `pip install -e .`) from the repo root. Export `CLAUDE_CODE_OAUTH_TOKEN` before running the extractor; fail fast if it is missing. Respect the default 1 MB file cap and exclude test fixtures unless `--include-tests` is passed.
 
 ## Build, Test, and Development Commands
-- `uv run python main.py <path> --top-n 10` — scan a file or directory and stream snippets to stdout.
+- `uv run python main.py <path>` — scan a file or directory and stream snippets to stdout (snippet limits are auto-calculated per file).
 - `uv run python main.py samples --output snippets.txt` — write formatted snippets to a file (helpful for manual QA).
 - `uv run python -m pytest` — placeholder; add tests here when a `tests/` package exists.
 Wrap long runs with `CLAUDE_CODE_OAUTH_TOKEN=... uv run ...` when scripting.
