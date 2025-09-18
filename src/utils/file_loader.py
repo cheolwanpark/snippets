@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, NamedTuple
 from pathlib import Path
@@ -21,6 +22,8 @@ class FileData(NamedTuple):
 
 class FileLoader:
     """Smart file discovery with filtering for source code analysis."""
+
+    logger = logging.getLogger("snippet_extractor")
     
     # Supported file extensions
     EXTENSIONS = {'.py', '.js', '.ts', '.rs'}
@@ -153,8 +156,7 @@ class FileLoader:
                     extension=file_info.extension
                 ))
             except Exception as e:
-                from tqdm import tqdm
-                tqdm.write(f"⚠️ Failed to load {file_info.path}: {e}")
+                self.logger.warning("Failed to load %s: %s", file_info.path, e)
                 
         return files_data
     

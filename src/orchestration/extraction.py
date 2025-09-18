@@ -2,9 +2,7 @@ import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Sequence, Set, Union
-
-from tqdm import tqdm
+from typing import Callable, Dict, List, Optional, Sequence, Set, Union
 
 from ..agent.snippet_extractor import SnippetExtractor
 from ..snippet import Snippet, SnippetStorage
@@ -34,7 +32,12 @@ class ExtractionPipeline:
         self.storage = SnippetStorage()
         self._last_run_stats: Optional[Dict[str, Union[int, float]]] = None
 
-    def run(self, path: str) -> List[Snippet]:
+    def run(
+        self,
+        path: str,
+        *,
+        on_file_complete: Optional[Callable[[str, bool, int, int], None]] = None,
+    ) -> List[Snippet]:
         """Extract snippets from files under the provided path."""
         loader = FileLoader(
             extensions=self.extensions,
@@ -48,7 +51,7 @@ class ExtractionPipeline:
             self.storage.register_file(file_data.relative_path)
 
         if files_data:
-            tqdm.write(f"📁 Loaded {len(files_data)} files from: {path}")
+            logger.info("Loaded %d files from %s", len(files_data), path)
 
         stats: Dict[str, Union[int, float]] = {
             "successful": 0,
@@ -59,7 +62,9 @@ class ExtractionPipeline:
         if files_data:
             self.executor = ThreadPoolExecutor(max_workers=self.max_concurrency)
             try:
-                stats = asyncio.run(self._process_files(files_data))
+                stats = asyncio.run(
+                    self._process_files(files_data, on_file_complete=on_file_complete)
+                )
             finally:
                 self.cleanup()
         else:
@@ -82,51 +87,52 @@ class ExtractionPipeline:
             self.executor = None
 
     async def _process_files(
-        self, files_data: List[FileData]
+        self,
+        files_data: List[FileData],
+        *,
+        on_file_complete: Optional[Callable[[str, bool, int, int], None]] = None,
     ) -> Dict[str, Union[int, float]]:
         assert self.executor is not None, "Executor must be initialized before processing"
 
         semaphore = asyncio.Semaphore(self.max_concurrency)
         self.errors.clear()
         start_time = time.time()
-
-        pbar = tqdm(
-            total=len(files_data),
-            desc="Processing files",
-            unit="file",
-            bar_format=(
-                "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} "
-                "[{elapsed}<{remaining}, {rate_fmt}]"
-            ),
-            position=0,
-            leave=True,
-        )
+        processed_count = 0
+        progress_lock = asyncio.Lock()
+        total_files = len(files_data)
 
         async def process_with_progress(file_data: FileData) -> bool:
-            filename_display = file_data.relative_path.split("/")[-1][:30]
+            nonlocal processed_count
             async with semaphore:
                 result = await self._process_single_file(file_data)
-            pbar.update(1)
-            pbar.set_postfix(file=filename_display, refresh=False)
+            async with progress_lock:
+                processed_count += 1
+                current_index = processed_count
+            if on_file_complete is not None:
+                try:
+                    on_file_complete(
+                        file_data.relative_path, result, current_index, total_files
+                    )
+                except Exception:  # pragma: no cover - defensive callback handling
+                    logger.exception("on_file_complete callback failed")
             return result
 
-        try:
-            results = await asyncio.gather(*(process_with_progress(fd) for fd in files_data))
-        finally:
-            pbar.close()
+        results = await asyncio.gather(*(process_with_progress(fd) for fd in files_data))
 
         successful = sum(1 for r in results if r)
         failed = len(files_data) - successful
         duration = time.time() - start_time
         snippet_count = self.storage.get_snippet_count()
 
-        tqdm.write("\n✅ Processing complete!")
-        tqdm.write(
-            "📈 Files: %s/%s | 🔢 Snippets: %s | ⏱️ Time: %.1fs"
-            % (successful, len(files_data), snippet_count, duration)
+        logger.info(
+            "Processing complete: %d/%d files succeeded, %d snippets, %.1fs elapsed",
+            successful,
+            len(files_data),
+            snippet_count,
+            duration,
         )
         if failed > 0:
-            tqdm.write(f"⚠️  Failed: {failed} files")
+            logger.warning("%d files failed during extraction", failed)
 
         return {"successful": successful, "failed": failed, "duration": duration}
 
@@ -183,6 +189,7 @@ def extract_snippets_from_path(
     extensions: Optional[Sequence[str]] = None,
     max_file_size: Optional[int] = None,
     include_tests: bool = False,
+    on_file_complete: Optional[Callable[[str, bool, int, int], None]] = None,
 ) -> List[Snippet]:
     """Convenience helper to run the extraction pipeline and return snippets."""
     pipeline = ExtractionPipeline(
@@ -191,4 +198,4 @@ def extract_snippets_from_path(
         max_file_size=max_file_size,
         include_tests=include_tests,
     )
-    return pipeline.run(path=path)
+    return pipeline.run(path=path, on_file_complete=on_file_complete)

@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "claude-agent-toolkit>=0.2.2",
-    "tqdm>=4.66.0",
     "pydantic>=2.5.0",
     "google-genai>=0.3.0",
     "qdrant-client>=1.9.0",
