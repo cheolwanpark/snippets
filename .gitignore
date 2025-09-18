@@ -15,6 +15,11 @@ docker/.env
 
 # claude code
 .claude
+.serena
 
 # test results
 snippets.txt
+
+# front
+node_modules/
+.next/
