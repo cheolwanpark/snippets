@@ -193,8 +193,22 @@ class SnippetVectorReader:
                 logger.debug("Skipping point %s due to missing fields", getattr(point, "id", "?"))
                 continue
 
-            if "repo" in payload:
-                snippet_data["repo"] = payload["repo"]
+            repo = payload.get("repo")
+            if repo is not None:
+                snippet_data["repo"] = repo
+
+            repo_name = payload.get("repo_name")
+            if repo_name is not None:
+                snippet_data["repo_name"] = repo_name
+                snippet_data.setdefault("repo", repo_name)
+
+            repo_url = payload.get("repo_url")
+            if repo_url is not None:
+                snippet_data["repo_url"] = repo_url
+
+            ingest_id = payload.get("ingest_id")
+            if ingest_id is not None:
+                snippet_data["ingest_id"] = ingest_id
 
             try:
                 snippets.append(Snippet(**snippet_data))
