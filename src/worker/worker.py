@@ -91,13 +91,25 @@ def process_repository(
     derived_repo_name = repo_name or _derive_repo_name(repo_url)
     status_store.ensure_record(job_id, repo_url, repo_name=derived_repo_name)
 
-    status_store.mark_processing(job_id, message="Cloning repository", repo_name=derived_repo_name)
+    status_store.mark_processing(
+        job_id,
+        message="Cloning repository",
+        repo_name=derived_repo_name,
+        progress=0,
+    )
 
     try:
         with GitHubRepo(url=repo_url, branch=branch, github_token=settings.github_token) as repo:
             repo_path = repo.path
             if repo_path is None:
                 raise RuntimeError("Repository path is unavailable after clone")
+
+            status_store.update_progress(
+                job_id,
+                message="Repository cloned",
+                progress=5,
+                repo_name=derived_repo_name,
+            )
 
             pipeline = ExtractionPipeline(
                 max_concurrency=settings.pipeline_max_concurrency,
@@ -106,12 +118,32 @@ def process_repository(
                 include_tests=include_tests,
             )
 
-            status_store.mark_processing(
+            def _update_progress(
+                relative_path: str, success: bool, completed: int, total: int
+            ) -> None:
+                status_message = f"Processed {completed}/{total} files"
+                if not success:
+                    status_message += f" (failed: {relative_path})"
+                try:
+                    progress = _progress_for_file_processing(completed, total)
+                    status_store.update_progress(
+                        job_id,
+                        message=status_message,
+                        progress=progress,
+                        repo_name=derived_repo_name,
+                    )
+                except Exception:  # pragma: no cover - defensive progress updates
+                    logger.exception("Failed to update progress for %s", relative_path)
+
+            status_store.update_progress(
                 job_id,
                 message="Extracting snippets from repository",
                 repo_name=derived_repo_name,
             )
-            snippets = pipeline.run(str(repo_path))
+            snippets = pipeline.run(
+                str(repo_path),
+                on_file_complete=_update_progress,
+            )
 
     except Exception as exc:  # pragma: no cover - defensive logging
         reason = _format_reason(exc)
@@ -126,6 +158,13 @@ def process_repository(
 
     total_files = pipeline.last_run_stats.get("total_files") if pipeline.last_run_stats else None
 
+    status_store.update_progress(
+        job_id,
+        message="File processing complete",
+        progress=80,
+        repo_name=derived_repo_name,
+    )
+
     enriched_snippets = _enrich_snippets(
         snippets,
         repo_url=repo_url,
@@ -134,6 +173,12 @@ def process_repository(
     )
 
     if not enriched_snippets:
+        status_store.update_progress(
+            job_id,
+            message="No snippets extracted",
+            progress=100,
+            repo_name=derived_repo_name,
+        )
         status_store.mark_completed(
             job_id,
             message="No snippets extracted",
@@ -149,14 +194,21 @@ def process_repository(
 
     writer = _build_writer(settings)
 
-    status_store.mark_processing(
+    status_store.update_progress(
         job_id,
-        message=f"Persisting {len(enriched_snippets)} snippets to Qdrant",
+        message=f"Generating embeddings for {len(enriched_snippets)} snippets",
+        progress=90,
         repo_name=derived_repo_name,
     )
 
     written = writer.write(enriched_snippets)
 
+    status_store.update_progress(
+        job_id,
+        message="Snippets uploaded to Qdrant",
+        progress=100,
+        repo_name=derived_repo_name,
+    )
     status_store.mark_completed(
         job_id,
         message=f"Stored {written} snippets in Qdrant",
@@ -227,6 +279,16 @@ def _derive_repo_name(repo_url: str | None) -> str | None:
 def _format_reason(exc: Exception) -> str:
     reason = str(exc).strip()
     return reason or exc.__class__.__name__
+
+
+def _progress_for_file_processing(completed: int, total: int) -> int:
+    if total <= 0:
+        return 80
+    base = 5
+    span = 75
+    ratio = max(0.0, min(1.0, completed / total))
+    progress = base + int(span * ratio)
+    return min(80, max(base, progress))
 
 
 __all__ = ["process_repository", "WorkerSettings"]

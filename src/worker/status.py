@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, List
 
 import redis
+
+logger = logging.getLogger("snippet_extractor")
 
 STATUS_PENDING = "pending"
 STATUS_PROCESSING = "processing"
@@ -25,6 +28,7 @@ class RepoRecord:
     repo_name: str | None = None
     process_message: str | None = None
     fail_reason: str | None = None
+    progress: int | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -40,6 +44,7 @@ class RepoRecord:
             "repo_name": self.repo_name,
             "process_message": self.process_message,
             "fail_reason": self.fail_reason,
+            "progress": self.progress,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -55,6 +60,7 @@ class RepoRecord:
             repo_name=data.get("repo_name"),
             process_message=data.get("process_message"),
             fail_reason=data.get("fail_reason"),
+            progress=_coerce_progress(data.get("progress")),
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -82,7 +88,13 @@ class RepoStatusStore:
         self.ttl_seconds = ttl_seconds
 
     def create_pending(self, repo_id: str, repo_url: str, *, repo_name: str | None = None) -> RepoRecord:
-        record = RepoRecord(id=repo_id, url=repo_url, status=STATUS_PENDING, repo_name=repo_name)
+        record = RepoRecord(
+            id=repo_id,
+            url=repo_url,
+            status=STATUS_PENDING,
+            repo_name=repo_name,
+            progress=0,
+        )
         self._write_record(record, is_new=True)
         return record
 
@@ -134,7 +146,14 @@ class RepoStatusStore:
                 records.append(record)
         return records
 
-    def mark_processing(self, repo_id: str, *, message: str | None = None, repo_name: str | None = None) -> RepoRecord:
+    def mark_processing(
+        self,
+        repo_id: str,
+        *,
+        message: str | None = None,
+        repo_name: str | None = None,
+        progress: int | None = None,
+    ) -> RepoRecord:
         record = self._require_record(repo_id)
         record.status = STATUS_PROCESSING
         if message:
@@ -142,11 +161,42 @@ class RepoStatusStore:
         if repo_name:
             record.repo_name = repo_name
         record.fail_reason = None
+        if progress is not None:
+            record.progress = max(0, min(100, progress))
         record.updated_at = datetime.now(timezone.utc)
         self._write_record(record)
         return record
 
-    def mark_completed(self, repo_id: str, *, message: str | None = None, repo_name: str | None = None) -> RepoRecord:
+    def update_progress(
+        self,
+        repo_id: str,
+        *,
+        message: str,
+        progress: int | None = None,
+        repo_name: str | None = None,
+    ) -> RepoRecord:
+        record = self._require_record(repo_id)
+        record.status = STATUS_PROCESSING
+        record.process_message = message
+        if repo_name:
+            record.repo_name = repo_name
+        if progress is not None:
+            clamped_progress = max(0, min(100, progress))
+            record.progress = clamped_progress
+            logger.info("[%s] progress updated to %d%% - %s", repo_id, clamped_progress, message)
+        else:
+            logger.info("[%s] progress message: %s", repo_id, message)
+        record.updated_at = datetime.now(timezone.utc)
+        self._write_record(record)
+        return record
+
+    def mark_completed(
+        self,
+        repo_id: str,
+        *,
+        message: str | None = None,
+        repo_name: str | None = None,
+    ) -> RepoRecord:
         record = self._require_record(repo_id)
         record.status = STATUS_DONE
         if message:
@@ -154,8 +204,9 @@ class RepoStatusStore:
         if repo_name:
             record.repo_name = repo_name
         record.fail_reason = None
+        record.progress = 100
         record.updated_at = datetime.now(timezone.utc)
-        self._write_record(record)
+        self._delete_record(record.id)
         return record
 
     def mark_failed(self, repo_id: str, reason: str, *, message: str | None = None, repo_name: str | None = None) -> RepoRecord:
@@ -166,6 +217,7 @@ class RepoStatusStore:
             record.process_message = message
         if repo_name:
             record.repo_name = repo_name
+        record.progress = None
         record.updated_at = datetime.now(timezone.utc)
         self._write_record(record)
         return record
@@ -188,6 +240,23 @@ class RepoStatusStore:
             pipe.expire(key, self.ttl_seconds)
         pipe.zadd(self.INDEX_KEY, {record.id: record.created_at.timestamp()})
         pipe.execute()
+
+    def _delete_record(self, repo_id: str) -> None:
+        key = self._record_key(repo_id)
+        pipe = self.redis.pipeline()
+        pipe.delete(key)
+        pipe.zrem(self.INDEX_KEY, repo_id)
+        pipe.execute()
+
+
+def _coerce_progress(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        progress = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(100, progress))
 
 
 __all__ = [
