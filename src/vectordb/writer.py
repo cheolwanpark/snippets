@@ -6,6 +6,10 @@ import uuid
 from typing import Sequence
 
 from qdrant_client import QdrantClient, models
+try:  # qdrant-client >=1.4 exposes typed HTTP exceptions
+    from qdrant_client.http.exceptions import UnexpectedResponse as QdrantUnexpectedResponse  # type: ignore
+except Exception:  # pragma: no cover - best effort compatibility with older clients
+    QdrantUnexpectedResponse = None  # type: ignore
 
 from ..snippet import Snippet
 from .config import DBConfig, EmbeddingConfig
@@ -97,6 +101,14 @@ class SnippetVectorWriter:
     ) -> int:
         """Delete all vectors associated with a repository ingest."""
 
+        # If the collection doesn't exist yet (first run), treat as no-op.
+        if not self._collection_exists():
+            logger.debug(
+                "Qdrant collection %s does not exist; nothing to delete",
+                self.collection_name,
+            )
+            return 0
+
         conditions: list[models.FieldCondition] = []
         if ingest_id:
             conditions.append(
@@ -139,22 +151,24 @@ class SnippetVectorWriter:
                 raise
             # Fallback for legacy qdrant-client versions expecting `filter` kwarg
             result = self._client.delete(filter=filter_, **delete_kwargs)
-        except Exception:
+        except Exception as exc:
+            # If the collection was dropped between the existence check and delete,
+            # gracefully treat 404 as a no-op instead of failing the request.
+            if QdrantUnexpectedResponse is not None and isinstance(exc, QdrantUnexpectedResponse):  # type: ignore[arg-type]
+                text = str(exc)
+                if "404" in text or "Not found" in text:
+                    logger.debug(
+                        "Qdrant delete saw 404 for collection %s; nothing to delete",
+                        self.collection_name,
+                    )
+                    return 0
             logger.exception("Failed to delete repository payload from Qdrant")
             raise
 
         return self._extract_deleted_count(result)
 
     def _ensure_collection(self, vector_size: int) -> None:
-        try:
-            exists = self._client.collection_exists(self.collection_name)
-        except AttributeError:
-            try:
-                self._client.get_collection(self.collection_name)
-                return
-            except Exception:  # pragma: no cover - defensive fall back
-                exists = False
-        if not exists:
+        if not self._collection_exists():
             logger.info(
                 "Creating Qdrant collection %s with vector size %d",
                 self.collection_name,
@@ -166,6 +180,18 @@ class SnippetVectorWriter:
             )
 
         self._ensure_payload_indexes()
+
+    def _collection_exists(self) -> bool:
+        """Best-effort way to check collection existence across client versions."""
+        try:
+            return bool(self._client.collection_exists(self.collection_name))
+        except AttributeError:
+            # Older clients may not expose collection_exists; fall back to get_collection
+            try:
+                self._client.get_collection(self.collection_name)
+                return True
+            except Exception:
+                return False
 
     def _ensure_payload_indexes(self) -> None:
         """Ensure payload indexes needed for metadata querying exist."""

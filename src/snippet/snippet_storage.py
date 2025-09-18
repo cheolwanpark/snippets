@@ -18,7 +18,7 @@ class SnippetStorage(BaseTool):
         if path not in snippets_by_path:
             snippets_by_path[path] = []
 
-    @tool(description="Store an extracted code snippet for later processing")
+    @tool()
     async def add_snippet(
         self,
         *,
@@ -31,7 +31,7 @@ class SnippetStorage(BaseTool):
         code: Annotated[str, "Verbatim code snippet to persist"],
         path: Annotated[str, "Repository-relative path of the source file"],
     ) -> Dict[str, Any]:
-        """Add a code snippet to the storage with lightweight validation."""
+        """Store an extracted code snippet for later processing."""
         if not title or not description or not language or not code or not path:
             return {
                 "added": False,
