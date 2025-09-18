@@ -274,10 +274,12 @@ class RepoStatusStore:
 
         record = self.get(repo_id) if repo_id else None
 
+        # If there is no Redis record, attempt vector-store deletion by any identifiers available.
+        # This covers completed ingests which purge Redis state on completion.
         if record is None:
             deleted = self._delete_from_vector_store(
                 vector_writer,
-                repo_id=None,
+                repo_id=repo_id,  # fall back to ingest_id when record is missing
                 repo_name=repo_name,
                 repo_url=repo_url,
             )

@@ -19,6 +19,7 @@ interface UseRepositoriesActions {
   clearSearch: () => void
   clearError: () => void
   refreshRepository: (id: string) => Promise<void>
+  deleteRepository: (id: string) => Promise<void>
 }
 
 /**
@@ -177,6 +178,31 @@ export function useRepositories(): UseRepositoriesState & UseRepositoriesActions
   }, [])
 
   /**
+   * Delete a repository by ID
+   */
+  const deleteRepository = useCallback(async (id: string) => {
+    setState(prev => ({ ...prev, loading: true, error: null }))
+
+    try {
+      const response = await fetch(`/api/repositories/${id}`, { method: 'DELETE' })
+      if (!response.ok && response.status !== 204) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      setState(prev => ({
+        ...prev,
+        repositories: prev.repositories.filter(repo => repo.id !== id),
+        loading: false,
+      }))
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete repository'
+      setState(prev => ({ ...prev, loading: false, error: errorMessage }))
+      throw error
+    }
+  }, [])
+
+  /**
    * Auto-refresh processing repositories
    */
   useEffect(() => {
@@ -211,5 +237,6 @@ export function useRepositories(): UseRepositoriesState & UseRepositoriesActions
     clearSearch,
     clearError,
     refreshRepository,
+    deleteRepository,
   }
 }

@@ -1,12 +1,13 @@
 "use client"
 
-import React, { useState, useMemo, useCallback } from "react"
+import React, { useState, useMemo, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { GitBranch, Search, Code, AlertCircle, Loader2 } from "lucide-react"
+import { GitBranch, Search, Code, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { RepositoryList } from "./repository-list"
 import { useRepositoryUtils } from "@/hooks/useRepositoryUtils"
 import { useRepositories } from "@/hooks/useRepositories"
@@ -29,10 +30,26 @@ export function RepoEmbedder() {
     searchSnippets,
     clearSearch,
     clearError,
+    deleteRepository,
   } = useRepositories()
 
   // Get utility functions from custom hook
   const { getStatusIcon, getStatusBadge, formatTimeAgo, filterRepositoriesByStatus } = useRepositoryUtils()
+
+  // Show toast notifications for errors
+  useEffect(() => {
+    if (error) {
+      toast.error(error)
+      clearError()
+    }
+  }, [error, clearError])
+
+  useEffect(() => {
+    if (searchError) {
+      toast.error(searchError)
+      clearError()
+    }
+  }, [searchError, clearError])
 
   // Memoized event handlers
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -46,6 +63,7 @@ export function RepoEmbedder() {
 
       await createRepository(repoData)
       setRepoUrl("") // Clear form on success
+      toast.success("Repository added for processing")
     } catch (error) {
       // Error is already handled by the hook
       console.error('Failed to create repository:', error)
@@ -59,10 +77,27 @@ export function RepoEmbedder() {
     await searchSnippets(query.trim(), 5)
   }, [query, searchSnippets])
 
-  const handleRemove = useCallback((id: string) => {
-    // TODO: Implement repository deletion API endpoint
-    console.log('Remove repository:', id)
-  }, [])
+  // Show search completion toast
+  useEffect(() => {
+    if (searchResults && !searchLoading) {
+      const count = searchResults.results.length
+      if (count === 0) {
+        toast(`No snippets found for "${searchResults.query}"`)
+      } else {
+        toast.success(`Found ${count} snippet${count === 1 ? '' : 's'} for "${searchResults.query}"`)
+      }
+    }
+  }, [searchResults, searchLoading])
+
+  const handleRemove = useCallback(async (id: string) => {
+    try {
+      await deleteRepository(id)
+      toast.success("Repository deleted successfully")
+    } catch (error) {
+      // Error state is already set in the hook; keep console for dev visibility
+      console.error('Failed to delete repository:', error)
+    }
+  }, [deleteRepository])
 
   // Memoized filtered repository lists
   const processingRepos = useMemo(() => filterRepositoriesByStatus(repositories, "processing"), [repositories, filterRepositoriesByStatus])
@@ -71,26 +106,6 @@ export function RepoEmbedder() {
 
   return (
     <div className="space-y-8">
-      {/* Global Error Display */}
-      {(error || searchError) && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-destructive" />
-              <p className="text-sm text-destructive">{error || searchError}</p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearError}
-                className="ml-auto h-6 px-2"
-              >
-                Dismiss
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       <div className="flex justify-center">
         <div className="inline-flex rounded-lg border p-1">
           <Button

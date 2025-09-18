@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import List, Sequence
 
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from rq import Queue
 
@@ -389,6 +389,36 @@ async def get_repository(
         updated_at=record.updated_at.isoformat(),
         snippet_count=snippet_count,
     )
+
+
+# FastAPI 0.111+ asserts that 204 routes must not define a body at
+# route construction time. Avoid setting `status_code=204` on the
+# decorator and return an empty Response with 204 explicitly.
+@router.delete(
+    "/repo/{repo_id}",
+    response_class=Response,
+)
+async def delete_repository(
+    repo_id: str,
+    status_store: RepoStatusStore = Depends(get_status_store),
+    queue: Queue = Depends(get_queue),
+    vector_writer: SnippetVectorWriter = Depends(get_vector_writer),
+) -> Response:
+    """Delete a repository ingest and its resources.
+
+    - Pending/processing: cancel job in RQ and remove Redis record
+    - Failed: remove Redis record
+    - Completed: remove vectors from Qdrant using ingest_id (repo_id)
+    """
+    try:
+        # RepoStatusStore.delete handles all status cases and Qdrant removal.
+        status_store.delete(repo_id, queue=queue, vector_writer=vector_writer)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to delete repository %s", repo_id)
+        raise HTTPException(status_code=500, detail="Failed to delete repository") from exc
+
+    # Explicitly return an empty 204 No Content response
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/snippets", response_model=SnippetQueryResponse)
