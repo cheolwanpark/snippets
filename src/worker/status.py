@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from typing import Any, List
 
 import redis
+from rq import Queue, cancel_job as rq_cancel_job
+from rq.command import send_stop_job_command
+from rq.job import JobStatus
+
+from ..vectordb.writer import SnippetVectorWriter
 
 logger = logging.getLogger("snippet_extractor")
 
@@ -146,6 +151,14 @@ class RepoStatusStore:
                 records.append(record)
         return records
 
+    def find_by_url(self, repo_url: str) -> RepoRecord | None:
+        if not repo_url:
+            return None
+        for record in self.list_records():
+            if record.url == repo_url:
+                return record
+        return None
+
     def mark_processing(
         self,
         repo_id: str,
@@ -247,6 +260,109 @@ class RepoStatusStore:
         pipe.delete(key)
         pipe.zrem(self.INDEX_KEY, repo_id)
         pipe.execute()
+
+    def delete(
+        self,
+        repo_id: str | None,
+        *,
+        queue: Queue | None = None,
+        vector_writer: SnippetVectorWriter | None = None,
+        repo_name: str | None = None,
+        repo_url: str | None = None,
+    ) -> bool:
+        """Remove a repository ingest record and associated resources."""
+
+        record = self.get(repo_id) if repo_id else None
+
+        if record is None:
+            deleted = self._delete_from_vector_store(
+                vector_writer,
+                repo_id=None,
+                repo_name=repo_name,
+                repo_url=repo_url,
+            )
+            return deleted > 0
+
+        status = record.status
+        if status in (STATUS_PENDING, STATUS_PROCESSING):
+            if repo_id is None:
+                logger.debug("Missing repo id for job cancellation request")
+                return False
+            self._cancel_job(queue, repo_id)
+            self._delete_record(repo_id)
+            return True
+
+        if status == STATUS_FAILED:
+            if repo_id is None:
+                logger.debug("Missing repo id for redis cleanup on failed job")
+                return False
+            self._delete_record(repo_id)
+            return True
+
+        if status == STATUS_DONE:
+            deleted = self._delete_from_vector_store(
+                vector_writer,
+                repo_id=record.id,
+                repo_name=record.repo_name,
+                repo_url=record.url,
+            )
+            if repo_id:
+                self._delete_record(repo_id)
+            return deleted > 0
+
+        logger.debug("Unhandled status %s for repo %s during delete", status, repo_id)
+        if repo_id:
+            self._delete_record(repo_id)
+        return True
+
+    @staticmethod
+    def _cancel_job(queue: Queue | None, job_id: str) -> None:
+        if queue is None:
+            logger.debug("Queue not provided; skip cancelling job %s", job_id)
+            return
+        try:
+            job = queue.fetch_job(job_id)
+            if job is None:
+                rq_cancel_job(job_id, connection=queue.connection)
+                return
+
+            job_status = job.get_status(refresh=True)
+            status_value = job_status.value if isinstance(job_status, JobStatus) else str(job_status).lower()
+            if status_value == JobStatus.STARTED.value:
+                send_stop_job_command(queue.connection, job_id)
+            job.cancel()
+        except Exception:
+            logger.warning("Failed to cancel job %s", job_id, exc_info=True)
+
+    @staticmethod
+    def _delete_from_vector_store(
+        vector_writer: SnippetVectorWriter | None,
+        *,
+        repo_id: str | None,
+        repo_name: str | None,
+        repo_url: str | None,
+    ) -> int:
+        if vector_writer is None:
+            logger.debug("Vector writer not provided; skipping Qdrant delete for %s", repo_id or "<unknown>")
+            return 0
+
+        delete_args: dict[str, str] = {}
+        if repo_id:
+            delete_args["ingest_id"] = repo_id
+        if repo_name:
+            delete_args["repo_name"] = repo_name
+        if repo_url:
+            delete_args["repo_url"] = repo_url
+
+        if not delete_args:
+            logger.debug("No identifiers provided for vector store deletion")
+            return 0
+
+        try:
+            return vector_writer.delete_repository(**delete_args)
+        except Exception:
+            logger.exception("Failed to delete repository %s from vector store", repo_id or "<unknown>")
+            raise
 
 
 def _coerce_progress(value: Any) -> int | None:

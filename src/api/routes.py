@@ -16,6 +16,7 @@ from rq import Queue
 from ..snippet import Snippet
 from ..vectordb.config import DBConfig, EmbeddingConfig
 from ..vectordb.reader import SnippetVectorReader
+from ..vectordb.writer import SnippetVectorWriter
 from ..worker.queue import QueueConfig, create_queue
 from ..worker.status import RepoRecord, RepoStatusStore, STATUS_DONE
 from ..worker.worker import process_repository
@@ -165,6 +166,21 @@ def _get_redis_client(request: Request, settings: ApiSettings) -> redis.Redis:
     return redis_client
 
 
+def _build_vector_configs(settings: ApiSettings) -> tuple[DBConfig, EmbeddingConfig]:
+    db_config = DBConfig(
+        url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key,
+        collection_name=settings.qdrant_collection,
+    )
+    embedding_config = EmbeddingConfig(
+        api_key=settings.embedding_api_key,
+        model=settings.embedding_model,
+        output_dimensionality=settings.embedding_output_dim,
+        batch_size=settings.embedding_batch_size,
+    )
+    return db_config, embedding_config
+
+
 def get_status_store(
     request: Request,
     settings: ApiSettings = Depends(get_settings),
@@ -197,20 +213,22 @@ def get_vector_reader(
 ) -> SnippetVectorReader:
     reader = getattr(request.app.state, "vector_reader", None)
     if reader is None:
-        db_config = DBConfig(
-            url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key,
-            collection_name=settings.qdrant_collection,
-        )
-        embedding_config = EmbeddingConfig(
-            api_key=settings.embedding_api_key,
-            model=settings.embedding_model,
-            output_dimensionality=settings.embedding_output_dim,
-            batch_size=settings.embedding_batch_size,
-        )
+        db_config, embedding_config = _build_vector_configs(settings)
         reader = SnippetVectorReader(db_config, embedding_config)
         request.app.state.vector_reader = reader
     return reader
+
+
+def get_vector_writer(
+    request: Request,
+    settings: ApiSettings = Depends(get_settings),
+) -> SnippetVectorWriter:
+    writer = getattr(request.app.state, "vector_writer", None)
+    if writer is None:
+        db_config, embedding_config = _build_vector_configs(settings)
+        writer = SnippetVectorWriter(db_config, embedding_config)
+        request.app.state.vector_writer = writer
+    return writer
 
 
 # Routes ----------------------------------------------------------------------
@@ -218,12 +236,49 @@ def get_vector_reader(
 
 @router.post("/repo", response_model=RepoCreateResponse, status_code=status.HTTP_202_ACCEPTED)
 async def enqueue_repository(
+    request: Request,
     payload: RepoCreateRequest,
     queue: Queue = Depends(get_queue),
     status_store: RepoStatusStore = Depends(get_status_store),
 ) -> RepoCreateResponse:
-    repo_id = uuid.uuid4().hex
+    api_settings = get_settings(request)
     repo_name = payload.repo_name or _derive_repo_name(payload.url)
+    vector_writer: SnippetVectorWriter | None = None
+
+    try:
+        existing_record = status_store.find_by_url(payload.url)
+        if existing_record is not None:
+            repo_name = existing_record.repo_name or repo_name
+            vector_writer = get_vector_writer(request, api_settings)
+            logger.info(
+                "Replacing existing ingest %s for %s", existing_record.id, payload.url
+            )
+            status_store.delete(
+                existing_record.id,
+                queue=queue,
+                vector_writer=vector_writer,
+                repo_name=repo_name,
+                repo_url=existing_record.url,
+            )
+
+        if payload.url:
+            vector_writer = vector_writer or get_vector_writer(request, api_settings)
+            removed_vectors = status_store.delete(
+                repo_id=None,
+                vector_writer=vector_writer,
+                repo_name=repo_name,
+                repo_url=payload.url,
+            )
+            if removed_vectors:
+                logger.info("Cleared stored snippets for %s", payload.url)
+    except Exception as exc:
+        logger.exception("Failed to purge existing repository state for %s", payload.url)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to remove existing repository state",
+        ) from exc
+
+    repo_id = uuid.uuid4().hex
 
     record = status_store.create_pending(repo_id, payload.url, repo_name=repo_name)
 

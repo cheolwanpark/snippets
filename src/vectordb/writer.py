@@ -29,7 +29,8 @@ class SnippetVectorWriter:
         self.distance = distance
 
         self._client = QdrantClient(**db_config.client_kwargs())
-        self._embedder = GeminiEmbeddingClient(embedding_config)
+        self._embedding_config = embedding_config
+        self._embedder: GeminiEmbeddingClient | None = None
 
     def write(self, snippets: Sequence[Snippet]) -> int:
         """Upsert snippets into Qdrant. Returns number of points written."""
@@ -38,7 +39,8 @@ class SnippetVectorWriter:
             return 0
 
         embedding_inputs = [self._embedding_input(snippet) for snippet in snippet_list]
-        vectors = self._embedder.embed(embedding_inputs)
+        embedder = self._get_embedder()
+        vectors = embedder.embed(embedding_inputs)
 
         if len(vectors) != len(snippet_list):
             logger.error(
@@ -85,6 +87,63 @@ class SnippetVectorWriter:
             total_written += len(points)
 
         return total_written
+
+    def delete_repository(
+        self,
+        *,
+        ingest_id: str | None = None,
+        repo_name: str | None = None,
+        repo_url: str | None = None,
+    ) -> int:
+        """Delete all vectors associated with a repository ingest."""
+
+        conditions: list[models.FieldCondition] = []
+        if ingest_id:
+            conditions.append(
+                models.FieldCondition(
+                    key="ingest_id",
+                    match=models.MatchValue(value=ingest_id),
+                )
+            )
+        if repo_name:
+            conditions.append(
+                models.FieldCondition(
+                    key="repo_name",
+                    match=models.MatchValue(value=repo_name),
+                )
+            )
+        if repo_url:
+            conditions.append(
+                models.FieldCondition(
+                    key="repo_url",
+                    match=models.MatchValue(value=repo_url),
+                )
+            )
+
+        if not conditions:
+            raise ValueError("At least one identifier must be provided to delete a repository")
+
+        filter_ = models.Filter(must=conditions)
+        delete_kwargs = {
+            "collection_name": self.collection_name,
+            "wait": True,
+        }
+
+        try:
+            result = self._client.delete(
+                points_selector=models.FilterSelector(filter=filter_),
+                **delete_kwargs,
+            )
+        except TypeError as exc:
+            if "points_selector" not in str(exc):
+                raise
+            # Fallback for legacy qdrant-client versions expecting `filter` kwarg
+            result = self._client.delete(filter=filter_, **delete_kwargs)
+        except Exception:
+            logger.exception("Failed to delete repository payload from Qdrant")
+            raise
+
+        return self._extract_deleted_count(result)
 
     def _ensure_collection(self, vector_size: int) -> None:
         try:
@@ -150,6 +209,27 @@ class SnippetVectorWriter:
         payload["embedding_input"] = embedding_input
         payload["embedding_key"] = embedding_key
         return payload
+
+    def _get_embedder(self) -> GeminiEmbeddingClient:
+        if self._embedder is None:
+            self._embedder = GeminiEmbeddingClient(self._embedding_config)
+        return self._embedder
+
+    @staticmethod
+    def _extract_deleted_count(result: object) -> int:
+        if result is None:
+            return 0
+
+        target = getattr(result, "result", result)
+        count = getattr(target, "count", None)
+        if count is None:
+            count = getattr(target, "deleted_count", None)
+
+        try:
+            return int(count) if count is not None else 0
+        except (TypeError, ValueError):
+            logger.debug("Unable to coerce deleted count from Qdrant response", exc_info=True)
+            return 0
 
 
 __all__ = ["SnippetVectorWriter"]
