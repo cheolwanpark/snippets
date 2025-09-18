@@ -119,6 +119,15 @@ class SnippetVectorWriter:
         except Exception as exc:  # pragma: no cover - best effort guard
             logger.debug("Skipping repo_name index creation: %s", exc)
 
+        try:
+            self._client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="ingest_id",
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+        except Exception as exc:  # pragma: no cover - best effort guard
+            logger.debug("Skipping ingest_id index creation: %s", exc)
+
     @staticmethod
     def _embedding_input(snippet: Snippet) -> str:
         return f"{snippet.title}\n\n{snippet.description}"

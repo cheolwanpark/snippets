@@ -6,12 +6,11 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
-from typing import Any, List, Sequence, Set
+from typing import List, Sequence
 
 import redis
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from qdrant_client import QdrantClient, models
 from rq import Queue
 
 from ..snippet import Snippet
@@ -192,19 +191,6 @@ def get_queue(
     return queue
 
 
-def _get_qdrant_client(request: Request, settings: ApiSettings) -> QdrantClient:
-    client = getattr(request.app.state, "qdrant_client", None)
-    if client is None:
-        client_kwargs: dict[str, Any] = {}
-        if settings.qdrant_url:
-            client_kwargs["url"] = settings.qdrant_url
-        if settings.qdrant_api_key:
-            client_kwargs["api_key"] = settings.qdrant_api_key
-        client = QdrantClient(**client_kwargs)
-        request.app.state.qdrant_client = client
-    return client
-
-
 def get_vector_reader(
     request: Request,
     settings: ApiSettings = Depends(get_settings),
@@ -263,26 +249,43 @@ async def enqueue_repository(
 
 @router.get("/repo", response_model=List[RepoSummary])
 async def list_repositories(
-    request: Request,
     status_store: RepoStatusStore = Depends(get_status_store),
     settings: ApiSettings = Depends(get_settings),
+    reader: SnippetVectorReader = Depends(get_vector_reader),
 ) -> List[RepoSummary]:
     records = status_store.list_records()
-    summaries = [_record_to_summary(record) for record in records]
 
-    active_ids: Set[str] = {record.id for record in records}
+    summaries: List[RepoSummary] = []
+    summary_index: dict[str, int] = {}
+    for record in records:
+        summary = _record_to_summary(record)
+        summary_index[summary.id] = len(summaries)
+        summaries.append(summary)
 
     try:
-        qdrant_client = _get_qdrant_client(request, settings)
-        completed_summaries = _list_completed_repo_summaries(
-            qdrant_client,
-            settings.qdrant_collection,
+        completed_metadata = reader.list_completed_repositories(
             limit=settings.qdrant_facet_limit,
-            exclude_ids=active_ids,
         )
-        summaries.extend(completed_summaries)
     except Exception:
         logger.debug("Failed to load completed repositories from Qdrant", exc_info=True)
+    else:
+        for metadata in completed_metadata:
+            completed_summary = RepoSummary(
+                id=metadata.ingest_id,
+                url=metadata.repo_url,
+                repo_name=metadata.repo_name,
+                status=STATUS_DONE,
+                process_message="Completed",
+                fail_reason=None,
+                progress=100,
+            )
+
+            existing_index = summary_index.get(metadata.ingest_id)
+            if existing_index is None:
+                summary_index[metadata.ingest_id] = len(summaries)
+                summaries.append(completed_summary)
+            else:
+                summaries[existing_index] = completed_summary
 
     return summaries
 
@@ -290,19 +293,13 @@ async def list_repositories(
 @router.get("/repo/{repo_id}", response_model=RepoDetailResponse)
 async def get_repository(
     repo_id: str,
-    request: Request,
     status_store: RepoStatusStore = Depends(get_status_store),
-    settings: ApiSettings = Depends(get_settings),
+    reader: SnippetVectorReader = Depends(get_vector_reader),
 ) -> RepoDetailResponse:
     record = status_store.get(repo_id)
     if record is None:
         try:
-            qdrant_client = _get_qdrant_client(request, settings)
-            completed = _get_completed_repo_detail(
-                qdrant_client,
-                settings.qdrant_collection,
-                repo_id,
-            )
+            completed = reader.get_completed_repository(repo_id)
         except Exception:
             logger.debug("Failed to fetch completed repository %s", repo_id, exc_info=True)
             completed = None
@@ -310,23 +307,23 @@ async def get_repository(
         if completed is None:
             raise HTTPException(status_code=404, detail="Repository not found")
 
-        summary, snippet_count = completed
         return RepoDetailResponse(
-            **summary.model_dump(),
+            id=completed.ingest_id,
+            url=completed.repo_url,
+            repo_name=completed.repo_name,
+            status=STATUS_DONE,
+            process_message="Completed",
+            fail_reason=None,
+            progress=100,
             created_at=None,
             updated_at=None,
-            snippet_count=snippet_count,
+            snippet_count=completed.snippet_count,
         )
 
     snippet_count: int | None = None
     if record.repo_name:
         try:
-            qdrant_client = _get_qdrant_client(request, settings)
-            snippet_count = _count_snippets_for_repo(
-                qdrant_client,
-                settings.qdrant_collection,
-                record.repo_name,
-            )
+            snippet_count = reader.count_snippets_for_repo(record.repo_name)
         except Exception:
             logger.debug("Failed to fetch snippet count for %s", record.repo_name, exc_info=True)
 
@@ -387,201 +384,5 @@ def _derive_repo_name(url: str | None) -> str | None:
         return path or cleaned
     except Exception:  # pragma: no cover - defensive
         return cleaned
-
-
-def _list_completed_repo_summaries(
-    client: QdrantClient,
-    collection: str,
-    *,
-    limit: int,
-    exclude_ids: Set[str],
-) -> List[RepoSummary]:
-    ingest_ids = _list_completed_ingest_ids(client, collection, limit=limit)
-    summaries: List[RepoSummary] = []
-    for ingest_id in ingest_ids:
-        if not ingest_id or ingest_id in exclude_ids:
-            continue
-        metadata = _load_completed_repo_metadata(client, collection, ingest_id)
-        if not metadata:
-            continue
-        repo_url = metadata.get("repo_url")
-        if not repo_url:
-            continue
-        repo_name = metadata.get("repo_name") or metadata.get("repo")
-        summaries.append(
-            RepoSummary(
-                id=ingest_id,
-                url=str(repo_url),
-                repo_name=repo_name if repo_name else None,
-                status=STATUS_DONE,
-                process_message="Completed",
-                fail_reason=None,
-                progress=100,
-            )
-        )
-    return summaries
-
-
-def _list_completed_ingest_ids(
-    client: QdrantClient,
-    collection: str,
-    *,
-    limit: int,
-) -> List[str]:
-    if limit <= 0:
-        limit = 100
-    try:
-        facet = client.facet(collection_name=collection, key="ingest_id", limit=limit, exact=False)
-        hits_container = getattr(facet, "result", facet)
-        hits = getattr(hits_container, "hits", [])
-        ingest_ids = [str(hit.value) for hit in hits if getattr(hit, "value", None)]
-        if ingest_ids:
-            return ingest_ids
-    except AttributeError:
-        pass
-    except Exception:
-        logger.debug("Facet ingest_id lookup failed", exc_info=True)
-
-    try:
-        groups = client.query_points_groups(
-            collection_name=collection,
-            group_by="ingest_id",
-            group_size=1,
-            limit=limit,
-            with_payload=False,
-            with_vector=False,
-        )
-    except Exception:
-        logger.debug("Group ingest_id lookup failed", exc_info=True)
-        return []
-
-    ingest_ids: List[str] = []
-    for group in groups or []:
-        group_id = getattr(group, "group_id", None)
-        if group_id:
-            ingest_ids.append(str(group_id))
-    return ingest_ids
-
-
-def _load_completed_repo_metadata(
-    client: QdrantClient,
-    collection: str,
-    ingest_id: str,
-) -> dict[str, Any] | None:
-    filter_ = models.Filter(
-        must=[
-            models.FieldCondition(key="ingest_id", match=models.MatchValue(value=ingest_id)),
-        ]
-    )
-    scroll_kwargs = {
-        "collection_name": collection,
-        "limit": 1,
-        "with_payload": True,
-        "with_vectors": False,
-    }
-    try:
-        scroll_result = client.scroll(filter=filter_, **scroll_kwargs)
-    except TypeError:
-        scroll_result = client.scroll(scroll_filter=filter_, **scroll_kwargs)
-    except AttributeError:
-        return None
-    except Exception:
-        logger.debug("Failed to scroll for ingest_id %s", ingest_id, exc_info=True)
-        return None
-
-    return _first_payload(scroll_result)
-
-
-def _first_payload(points_result: Any) -> dict[str, Any] | None:
-    points = points_result
-    if isinstance(points_result, tuple):
-        points = points_result[0]
-    if points is None:
-        return None
-    if hasattr(points, "points"):
-        points = getattr(points, "points")
-    if hasattr(points, "records"):
-        points = getattr(points, "records")
-    for point in points or []:
-        payload = getattr(point, "payload", None)
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _get_completed_repo_detail(
-    client: QdrantClient,
-    collection: str,
-    ingest_id: str,
-) -> tuple[RepoSummary, int | None] | None:
-    metadata = _load_completed_repo_metadata(client, collection, ingest_id)
-    if not metadata:
-        return None
-    repo_url = metadata.get("repo_url")
-    if not repo_url:
-        return None
-    repo_name = metadata.get("repo_name") or metadata.get("repo")
-    summary = RepoSummary(
-        id=ingest_id,
-        url=str(repo_url),
-        repo_name=repo_name if repo_name else None,
-        status=STATUS_DONE,
-        process_message="Completed",
-        fail_reason=None,
-        progress=100,
-    )
-    snippet_count = _count_snippets_for_ingest(client, collection, ingest_id)
-    return summary, snippet_count
-
-
-def _count_snippets_for_ingest(
-    client: QdrantClient,
-    collection: str,
-    ingest_id: str,
-) -> int | None:
-    try:
-        filter_ = models.Filter(
-            must=[
-                models.FieldCondition(
-                    key="ingest_id",
-                    match=models.MatchValue(value=ingest_id),
-                )
-            ]
-        )
-        result = client.count(
-            collection_name=collection,
-            filter=filter_,
-            exact=False,
-        )
-        return getattr(result, "count", None)
-    except Exception:
-        logger.debug("Failed to count snippets for ingest %s", ingest_id, exc_info=True)
-        return None
-
-
-def _count_snippets_for_repo(
-    client: QdrantClient,
-    collection: str,
-    repo_name: str,
-) -> int | None:
-    try:
-        filter_ = models.Filter(
-            must=[
-                models.FieldCondition(
-                    key="repo_name",
-                    match=models.MatchValue(value=repo_name),
-                )
-            ]
-        )
-        result = client.count(
-            collection_name=collection,
-            filter=filter_,
-            exact=False,
-        )
-        return getattr(result, "count", None)
-    except Exception:
-        logger.debug("Failed to count snippets for repo %s", repo_name, exc_info=True)
-        return None
-
 
 __all__ = ["router", "ApiSettings"]
