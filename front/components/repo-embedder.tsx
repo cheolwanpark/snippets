@@ -6,37 +6,62 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { GitBranch, Search, Code } from "lucide-react"
+import { GitBranch, Search, Code, AlertCircle, Loader2 } from "lucide-react"
 import { RepositoryList } from "./repository-list"
 import { useRepositoryUtils } from "@/hooks/useRepositoryUtils"
-import { mockRepositories, mockSearchResults } from "@/constants/mockData"
-import type { Repository, SearchResult } from "@/types"
+import { useRepositories } from "@/hooks/useRepositories"
+import type { RepoCreateRequest } from "@/types"
 
 export function RepoEmbedder() {
   const [mode, setMode] = useState<"embed" | "query">("embed")
   const [repoUrl, setRepoUrl] = useState("")
   const [query, setQuery] = useState("")
 
-  // Use simplified mock data from constants
-  const repositories = mockRepositories
-  const searchResults = mockSearchResults
+  // Real API integration
+  const {
+    repositories,
+    loading,
+    error,
+    searchResults,
+    searchLoading,
+    searchError,
+    createRepository,
+    searchSnippets,
+    clearSearch,
+    clearError,
+  } = useRepositories()
 
   // Get utility functions from custom hook
   const { getStatusIcon, getStatusBadge, formatTimeAgo, filterRepositoriesByStatus } = useRepositoryUtils()
 
   // Memoized event handlers
-  const handleSubmit = useCallback((e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
-    // Demo functionality - prevent form submission
-  }, [])
+    if (!repoUrl.trim()) return
 
-  const handleSearch = useCallback((e: React.FormEvent) => {
+    try {
+      const repoData: RepoCreateRequest = {
+        url: repoUrl.trim(),
+      }
+
+      await createRepository(repoData)
+      setRepoUrl("") // Clear form on success
+    } catch (error) {
+      // Error is already handled by the hook
+      console.error('Failed to create repository:', error)
+    }
+  }, [repoUrl, createRepository])
+
+  const handleSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
-    // Demo functionality - prevent form submission
-  }, [])
+    if (!query.trim()) return
+
+    await searchSnippets(query.trim(), 5)
+  }, [query, searchSnippets])
 
   const handleRemove = useCallback((id: string) => {
-    // Demo functionality - no actual removal
+    // TODO: Implement repository deletion API endpoint
+    console.log('Remove repository:', id)
   }, [])
 
   // Memoized filtered repository lists
@@ -46,12 +71,35 @@ export function RepoEmbedder() {
 
   return (
     <div className="space-y-8">
+      {/* Global Error Display */}
+      {(error || searchError) && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-destructive" />
+              <p className="text-sm text-destructive">{error || searchError}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearError}
+                className="ml-auto h-6 px-2"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex justify-center">
         <div className="inline-flex rounded-lg border p-1">
           <Button
             variant={mode === "embed" ? "default" : "ghost"}
             size="sm"
-            onClick={() => setMode("embed")}
+            onClick={() => {
+              setMode("embed")
+              clearSearch()
+            }}
             className="rounded-md"
           >
             <GitBranch className="h-4 w-4 mr-2" />
@@ -87,8 +135,15 @@ export function RepoEmbedder() {
                   onChange={(e) => setRepoUrl(e.target.value)}
                   className="flex-1"
                 />
-                <Button type="submit" disabled={!repoUrl.trim()}>
-                  Embed Repository
+                <Button type="submit" disabled={!repoUrl.trim() || loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Embed Repository"
+                  )}
                 </Button>
               </form>
             </CardContent>
@@ -161,15 +216,22 @@ export function RepoEmbedder() {
                   onChange={(e) => setQuery(e.target.value)}
                   className="flex-1"
                 />
-                <Button type="submit" disabled={!query.trim()}>
-                  Search
+                <Button type="submit" disabled={!query.trim() || searchLoading}>
+                  {searchLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Searching...
+                    </>
+                  ) : (
+                    "Search"
+                  )}
                 </Button>
               </form>
             </CardContent>
           </Card>
 
           <div className="space-y-4">
-            {!query ? (
+            {!searchResults ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <Search className="h-12 w-12 text-muted-foreground mb-4" />
@@ -180,33 +242,56 @@ export function RepoEmbedder() {
                   </p>
                 </CardContent>
               </Card>
+            ) : searchResults.results.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <Search className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Results Found</h3>
+                  <p className="text-muted-foreground max-w-md">
+                    No code snippets found for "{searchResults.query}". Try a different search term.
+                  </p>
+                </CardContent>
+              </Card>
             ) : (
-              searchResults.map((result) => (
-                <Card key={result.id}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <CardTitle className="text-base">{result.title}</CardTitle>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Code className="h-3 w-3" />
-                          <span>{result.repo}</span>
-                          <span>•</span>
-                          <span>{result.path}</span>
+              <>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Found {searchResults.results.length} results for "{searchResults.query}"</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSearch}
+                    className="h-6 px-2"
+                  >
+                    Clear
+                  </Button>
+                </div>
+                {searchResults.results.map((result, index) => (
+                  <Card key={index}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <CardTitle className="text-base">{result.title}</CardTitle>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Code className="h-3 w-3" />
+                            <span>{result.repo_name}</span>
+                            <span>•</span>
+                            <span>{result.path}</span>
+                          </div>
                         </div>
+                        <Badge variant="outline">{result.language}</Badge>
                       </div>
-                      <Badge variant="outline">{result.language}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{result.description}</p>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md bg-muted p-4">
-                      <pre className="text-sm overflow-x-auto">
-                        <code>{result.snippet}</code>
-                      </pre>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                      <p className="text-sm text-muted-foreground">{result.description}</p>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md bg-muted p-4">
+                        <pre className="text-sm overflow-x-auto">
+                          <code>{result.code}</code>
+                        </pre>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </>
             )}
           </div>
         </>

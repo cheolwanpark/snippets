@@ -12,6 +12,7 @@ wheels/
 # secrets
 .env
 docker/.env
+.env.local
 
 # claude code
 .claude
