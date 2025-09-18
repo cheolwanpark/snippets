@@ -24,3 +24,6 @@ snippets.txt
 # front
 node_modules/
 .next/
+
+# macOS
+.DS_Store
