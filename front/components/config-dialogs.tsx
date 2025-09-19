@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Settings } from "lucide-react"
+import { toast } from "sonner"
 import type { RepoConfig, SearchConfig } from "@/types"
 
 interface RepoConfigDialogProps {
@@ -39,6 +40,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
 
   const handleApply = () => {
     onConfigChange(localConfig)
+    toast.success("Repository configuration applied")
     setOpen(false)
   }
 
@@ -46,6 +48,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
     const resetConfig: RepoConfig = { include_tests: false }
     setLocalConfig(resetConfig)
     onConfigChange(resetConfig)
+    toast.success("Repository configuration reset")
     setOpen(false)
   }
 
@@ -54,16 +57,12 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
     setLocalConfig(prev => ({ ...prev, extensions }))
   }
 
-  const hasConfiguration = Object.keys(config).length > 0
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 relative">
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
           <Settings className="h-4 w-4" />
-          {hasConfiguration && (
-            <div className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full" />
-          )}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -146,6 +145,7 @@ export function SearchConfigDialog({ config, onConfigChange }: SearchConfigDialo
 
   const handleApply = () => {
     onConfigChange(localConfig)
+    toast.success("Search configuration applied")
     setOpen(false)
   }
 
@@ -153,21 +153,16 @@ export function SearchConfigDialog({ config, onConfigChange }: SearchConfigDialo
     const resetConfig: SearchConfig = { limit: 5 }
     setLocalConfig(resetConfig)
     onConfigChange(resetConfig)
+    toast.success("Search configuration reset")
     setOpen(false)
   }
 
-  const hasConfiguration = Object.keys(config).some(key =>
-    key !== 'limit' || config.limit !== 5
-  )
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 relative">
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
           <Settings className="h-4 w-4" />
-          {hasConfiguration && (
-            <div className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full" />
-          )}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
