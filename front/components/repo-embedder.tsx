@@ -106,40 +106,40 @@ export function RepoEmbedder() {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-center">
-        <div className="inline-flex rounded-lg border p-1">
-          <Button
-            variant={mode === "embed" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => {
-              setMode("embed")
-              clearSearch()
-            }}
-            className="rounded-md"
-          >
-            <GitBranch className="h-4 w-4 mr-2" />
-            Embed
-          </Button>
-          <Button
-            variant={mode === "query" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setMode("query")}
-            className="rounded-md"
-          >
-            <Search className="h-4 w-4 mr-2" />
-            Query
-          </Button>
-        </div>
-      </div>
 
       {mode === "embed" ? (
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GitBranch className="h-5 w-5" />
-                Add Repository
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <GitBranch className="h-5 w-5" />
+                  Add Repository
+                </CardTitle>
+                <div className="inline-flex gap-1 rounded-lg border p-1.5">
+                  <Button
+                    variant={mode === "embed" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => {
+                      setMode("embed")
+                      clearSearch()
+                    }}
+                    className="rounded-md"
+                  >
+                    <GitBranch className="h-4 w-4 mr-2" />
+                    Embed
+                  </Button>
+                  <Button
+                    variant={mode === "query" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setMode("query")}
+                    className="rounded-md"
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    Query
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="flex gap-4">
@@ -217,10 +217,35 @@ export function RepoEmbedder() {
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Search className="h-5 w-5" />
-                Search Code Snippets
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Search Code Snippets
+                </CardTitle>
+                <div className="inline-flex gap-1 rounded-lg border p-1.5">
+                  <Button
+                    variant={mode === "embed" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => {
+                      setMode("embed")
+                      clearSearch()
+                    }}
+                    className="rounded-md"
+                  >
+                    <GitBranch className="h-4 w-4 mr-2" />
+                    Embed
+                  </Button>
+                  <Button
+                    variant={mode === "query" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setMode("query")}
+                    className="rounded-md"
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    Query
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSearch} className="flex gap-4">

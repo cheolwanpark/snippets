@@ -79,7 +79,25 @@ export function useRepositoryUtils() {
     repositories: RepoSummary[],
     status?: string
   ) => {
-    return status ? repositories.filter((repo) => repo.status.toLowerCase() === status.toLowerCase()) : repositories
+    if (!status) return repositories
+
+    const targetStatus = status.toLowerCase()
+
+    return repositories.filter((repo) => {
+      const repoStatus = repo.status.toLowerCase()
+
+      // Handle different status variations
+      switch (targetStatus) {
+        case "completed":
+          return repoStatus === "completed" || repoStatus === "done"
+        case "processing":
+          return repoStatus === "processing" || repoStatus === "in_progress" || repoStatus === "pending"
+        case "error":
+          return repoStatus === "error" || repoStatus === "failed"
+        default:
+          return repoStatus === targetStatus
+      }
+    })
   }, [])
 
   return {

@@ -7,8 +7,11 @@ import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'GitHub Repository Embedder',
+  title: 'Snippets',
   description: 'Transform GitHub repositories into searchable code snippets for your vector database',
+  icons: {
+    icon: '/snippets.png',
+  },
 }
 
 export default function RootLayout({
