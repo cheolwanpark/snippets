@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.api
     env_file:
       - ./.env.example
       - ./.env
@@ -16,7 +16,7 @@ services:
   worker:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.worker
     command: ["sh", "-c", "rq worker --with-scheduler $${RQ_QUEUE_NAME:-repo-ingest}"]
     env_file:
       - ./.env.example
@@ -24,6 +24,18 @@ services:
     depends_on:
       - redis
       - qdrant
+    restart: unless-stopped
+
+  front:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.front
+    ports:
+      - "3000:3000"
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
     restart: unless-stopped
 
   redis:
