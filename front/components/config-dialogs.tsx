@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,6 +38,11 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
   const [open, setOpen] = useState(false)
   const [localConfig, setLocalConfig] = useState<RepoConfig>(config)
 
+  // Sync localConfig with config prop changes
+  useEffect(() => {
+    setLocalConfig(config)
+  }, [config])
+
   const handleApply = () => {
     onConfigChange(localConfig)
     toast.success("Repository configuration applied")
@@ -47,9 +52,15 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
   const handleReset = () => {
     const resetConfig: RepoConfig = { include_tests: false }
     setLocalConfig(resetConfig)
-    onConfigChange(resetConfig)
     toast.success("Repository configuration reset")
-    setOpen(false)
+  }
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      // Discard local changes when closing
+      setLocalConfig(config)
+    }
+    setOpen(isOpen)
   }
 
   const handlePatternsChange = (value: string) => {
@@ -59,7 +70,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
 
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
           <Settings className="h-4 w-4" />
@@ -78,6 +89,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
             <Input
               id="branch"
               placeholder="main, develop, feature/branch"
+              className="placeholder:text-gray-400"
               value={localConfig.branch || ""}
               onChange={(e) => setLocalConfig(prev => ({ ...prev, branch: e.target.value || undefined }))}
             />
@@ -88,6 +100,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
             <Input
               id="patterns"
               placeholder="*.py, *.js, *.tsx, *.ts"
+              className="placeholder:text-gray-400"
               value={localConfig.patterns?.join(',') || ""}
               onChange={(e) => handlePatternsChange(e.target.value)}
             />
@@ -99,6 +112,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
               id="maxFileSize"
               type="number"
               placeholder="102400"
+              className="placeholder:text-gray-400"
               value={localConfig.max_file_size || ""}
               onChange={(e) => setLocalConfig(prev => ({
                 ...prev,
@@ -143,6 +157,11 @@ export function SearchConfigDialog({ config, onConfigChange }: SearchConfigDialo
   const [open, setOpen] = useState(false)
   const [localConfig, setLocalConfig] = useState<SearchConfig>(config)
 
+  // Sync localConfig with config prop changes
+  useEffect(() => {
+    setLocalConfig(config)
+  }, [config])
+
   const handleApply = () => {
     onConfigChange(localConfig)
     toast.success("Search configuration applied")
@@ -152,14 +171,20 @@ export function SearchConfigDialog({ config, onConfigChange }: SearchConfigDialo
   const handleReset = () => {
     const resetConfig: SearchConfig = { limit: 5 }
     setLocalConfig(resetConfig)
-    onConfigChange(resetConfig)
     toast.success("Search configuration reset")
-    setOpen(false)
+  }
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      // Discard local changes when closing
+      setLocalConfig(config)
+    }
+    setOpen(isOpen)
   }
 
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
           <Settings className="h-4 w-4" />
@@ -178,6 +203,7 @@ export function SearchConfigDialog({ config, onConfigChange }: SearchConfigDialo
             <Input
               id="repoName"
               placeholder="my-repo, organization/repo"
+              className="placeholder:text-gray-400"
               value={localConfig.repo_name || ""}
               onChange={(e) => setLocalConfig(prev => ({ ...prev, repo_name: e.target.value || undefined }))}
             />
@@ -188,6 +214,7 @@ export function SearchConfigDialog({ config, onConfigChange }: SearchConfigDialo
             <Input
               id="language"
               placeholder="python, javascript, typescript"
+              className="placeholder:text-gray-400"
               value={localConfig.language || ""}
               onChange={(e) => setLocalConfig(prev => ({ ...prev, language: e.target.value || undefined }))}
             />

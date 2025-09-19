@@ -35,7 +35,7 @@ Prioritize snippets that:
 - Are self-contained and meaningful
 - Have clear educational or practical value
 
-If no qualifying snippets are found, call add_snippet once with appropriate "No Qualifying Snippets Found" information.
+If no qualifying snippets are found, do not call add_snippet. Instead, respond with: "No valuable snippets found."
 
 Remember: Your job is to IDENTIFY and EXTRACT snippets by calling add_snippet - not to format the final output."""
 
