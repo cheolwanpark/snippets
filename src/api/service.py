@@ -1,29 +1,34 @@
-"""FastAPI routes for repository ingestion and snippet search."""
+"""Service-level helpers and dependency wiring for API routes."""
 
 from __future__ import annotations
 
 import logging
 import os
-import uuid
 from dataclasses import dataclass
-from typing import List, Sequence
+import uuid
+from typing import List
 
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, Field
+from fastapi import Depends, HTTPException, Request, status
 from rq import Queue
 
-from ..snippet import Snippet
 from ..vectordb.config import DBConfig, EmbeddingConfig
 from ..vectordb.reader import SnippetVectorReader
 from ..vectordb.writer import SnippetVectorWriter
 from ..worker.queue import QueueConfig, create_queue
 from ..worker.status import RepoRecord, RepoStatusStore, STATUS_DONE
 from ..worker.worker import process_repository
+from ..utils.file_loader import FileLoader
+from .model import (
+    RepoCreateRequest,
+    RepoCreateResponse,
+    RepoDetailResponse,
+    RepoSummary,
+    SnippetQueryResponse,
+    SnippetResponse,
+)
 
 logger = logging.getLogger("snippet_extractor")
-
-router = APIRouter()
 
 
 @dataclass(slots=True)
@@ -81,74 +86,6 @@ class ApiSettings:
             embedding_batch_size=_int_env("EMBEDDING_BATCH_SIZE", 100),
             embedding_output_dim=_optional_int("EMBEDDING_OUTPUT_DIM"),
         )
-
-
-class RepoCreateRequest(BaseModel):
-    url: str = Field(..., description="GitHub repository URL")
-    branch: str | None = Field(None, description="Repository branch or ref to clone")
-    include_tests: bool = Field(False, description="Include test directories when extracting")
-    extensions: Sequence[str] | None = Field(
-        None, description="Optional list of file extensions to include"
-    )
-    max_file_size: int | None = Field(
-        None,
-        description="Maximum file size (bytes) to consider",
-        ge=0,
-    )
-    repo_name: str | None = Field(
-        None,
-        description="Optional repository identifier to store alongside snippets",
-    )
-
-
-class RepoSummary(BaseModel):
-    id: str
-    url: str
-    repo_name: str | None = None
-    status: str
-    process_message: str | None = None
-    fail_reason: str | None = None
-    progress: int | None = None
-
-
-class RepoDetailResponse(RepoSummary):
-    created_at: str | None = None
-    updated_at: str | None = None
-    snippet_count: int | None = None
-
-
-class RepoCreateResponse(RepoSummary):
-    pass
-
-
-class SnippetResponse(BaseModel):
-    title: str
-    description: str
-    language: str
-    code: str
-    path: str
-    repo_name: str | None = None
-    repo_url: str | None = None
-
-    @classmethod
-    def from_snippet(cls, snippet: Snippet) -> "SnippetResponse":
-        return cls(
-            title=snippet.title,
-            description=snippet.description,
-            language=snippet.language,
-            code=snippet.code,
-            path=snippet.path,
-            repo_name=getattr(snippet, "repo_name", None) or snippet.repo,
-            repo_url=getattr(snippet, "repo_url", None),
-        )
-
-
-class SnippetQueryResponse(BaseModel):
-    query: str
-    results: List[SnippetResponse]
-
-
-# Dependencies -----------------------------------------------------------------
 
 
 def get_settings(request: Request) -> ApiSettings:
@@ -231,25 +168,52 @@ def get_vector_writer(
     return writer
 
 
-# Routes ----------------------------------------------------------------------
+def record_to_summary(record: RepoRecord) -> RepoSummary:
+    return RepoSummary(
+        id=record.id,
+        url=record.url,
+        repo_name=record.repo_name,
+        status=record.status,
+        process_message=record.process_message,
+        fail_reason=record.fail_reason,
+        progress=record.progress,
+    )
 
 
-@router.post("/repo", response_model=RepoCreateResponse, status_code=status.HTTP_202_ACCEPTED)
-async def enqueue_repository(
+def derive_repo_name(url: str | None) -> str | None:
+    if not url:
+        return None
+    cleaned = url.strip()
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[:-4]
+    if cleaned.startswith("git@"):
+        _, _, remainder = cleaned.partition(":")
+        return remainder or cleaned
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(cleaned)
+        path = (parsed.path or "").strip("/")
+        return path or cleaned
+    except Exception:  # pragma: no cover - defensive
+        return cleaned
+
+
+def enqueue_repository_service(
     request: Request,
     payload: RepoCreateRequest,
-    queue: Queue = Depends(get_queue),
-    status_store: RepoStatusStore = Depends(get_status_store),
+    queue: Queue,
+    status_store: RepoStatusStore,
+    settings: ApiSettings,
 ) -> RepoCreateResponse:
-    api_settings = get_settings(request)
-    repo_name = payload.repo_name or _derive_repo_name(payload.url)
+    repo_name = payload.repo_name or derive_repo_name(payload.url)
     vector_writer: SnippetVectorWriter | None = None
 
     try:
         existing_record = status_store.find_by_url(payload.url)
         if existing_record is not None:
             repo_name = existing_record.repo_name or repo_name
-            vector_writer = get_vector_writer(request, api_settings)
+            vector_writer = get_vector_writer(request, settings=settings)
             logger.info(
                 "Replacing existing ingest %s for %s", existing_record.id, payload.url
             )
@@ -262,7 +226,7 @@ async def enqueue_repository(
             )
 
         if payload.url:
-            vector_writer = vector_writer or get_vector_writer(request, api_settings)
+            vector_writer = vector_writer or get_vector_writer(request, settings=settings)
             removed_vectors = status_store.delete(
                 repo_id=None,
                 vector_writer=vector_writer,
@@ -282,13 +246,15 @@ async def enqueue_repository(
 
     record = status_store.create_pending(repo_id, payload.url, repo_name=repo_name)
 
+    patterns = list(payload.patterns) if payload.patterns else list(FileLoader.DEFAULT_PATTERNS)
+
     job_kwargs = {
         "job_id": repo_id,
         "repo_url": payload.url,
         "repo_name": repo_name,
         "branch": payload.branch,
         "include_tests": payload.include_tests,
-        "extensions": list(payload.extensions) if payload.extensions else None,
+        "patterns": patterns,
         "max_file_size": payload.max_file_size,
     }
 
@@ -299,21 +265,20 @@ async def enqueue_repository(
         status_store.mark_failed(repo_id, reason=str(exc) or exc.__class__.__name__)
         raise HTTPException(status_code=500, detail="Failed to enqueue repository job")
 
-    return _record_to_summary(record)
+    return RepoCreateResponse(**record_to_summary(record).model_dump())
 
 
-@router.get("/repo", response_model=List[RepoSummary])
-async def list_repositories(
-    status_store: RepoStatusStore = Depends(get_status_store),
-    settings: ApiSettings = Depends(get_settings),
-    reader: SnippetVectorReader = Depends(get_vector_reader),
+def list_repositories_service(
+    status_store: RepoStatusStore,
+    reader: SnippetVectorReader,
+    settings: ApiSettings,
 ) -> List[RepoSummary]:
     records = status_store.list_records()
 
     summaries: List[RepoSummary] = []
     summary_index: dict[str, int] = {}
     for record in records:
-        summary = _record_to_summary(record)
+        summary = record_to_summary(record)
         summary_index[summary.id] = len(summaries)
         summaries.append(summary)
 
@@ -345,11 +310,10 @@ async def list_repositories(
     return summaries
 
 
-@router.get("/repo/{repo_id}", response_model=RepoDetailResponse)
-async def get_repository(
+def get_repository_service(
     repo_id: str,
-    status_store: RepoStatusStore = Depends(get_status_store),
-    reader: SnippetVectorReader = Depends(get_vector_reader),
+    status_store: RepoStatusStore,
+    reader: SnippetVectorReader,
 ) -> RepoDetailResponse:
     record = status_store.get(repo_id)
     if record is None:
@@ -382,7 +346,7 @@ async def get_repository(
         except Exception:
             logger.debug("Failed to fetch snippet count for %s", record.repo_name, exc_info=True)
 
-    summary = _record_to_summary(record)
+    summary = record_to_summary(record)
     return RepoDetailResponse(
         **summary.model_dump(),
         created_at=record.created_at.isoformat(),
@@ -391,44 +355,34 @@ async def get_repository(
     )
 
 
-# FastAPI 0.111+ asserts that 204 routes must not define a body at
-# route construction time. Avoid setting `status_code=204` on the
-# decorator and return an empty Response with 204 explicitly.
-@router.delete(
-    "/repo/{repo_id}",
-    response_class=Response,
-)
-async def delete_repository(
+def delete_repository_service(
     repo_id: str,
-    status_store: RepoStatusStore = Depends(get_status_store),
-    queue: Queue = Depends(get_queue),
-    vector_writer: SnippetVectorWriter = Depends(get_vector_writer),
-) -> Response:
-    """Delete a repository ingest and its resources.
-
-    - Pending/processing: cancel job in RQ and remove Redis record
-    - Failed: remove Redis record
-    - Completed: remove vectors from Qdrant using ingest_id (repo_id)
-    """
+    status_store: RepoStatusStore,
+    queue: Queue,
+    vector_writer: SnippetVectorWriter,
+) -> None:
     try:
-        # RepoStatusStore.delete handles all status cases and Qdrant removal.
         status_store.delete(repo_id, queue=queue, vector_writer=vector_writer)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to delete repository %s", repo_id)
         raise HTTPException(status_code=500, detail="Failed to delete repository") from exc
 
-    # Explicitly return an empty 204 No Content response
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-
-@router.get("/snippets", response_model=SnippetQueryResponse)
-async def query_snippets(
-    query: str = Query(..., min_length=1, description="Natural language search query"),
-    limit: int = Query(5, ge=1, le=50, description="Maximum number of snippets to return"),
-    reader: SnippetVectorReader = Depends(get_vector_reader),
+def query_snippets_service(
+    query: str,
+    limit: int,
+    reader: SnippetVectorReader,
+    *,
+    repo_name: str | None = None,
+    language: str | None = None,
 ) -> SnippetQueryResponse:
     try:
-        snippets = reader.query(query, limit=limit)
+        snippets = reader.query(
+            query,
+            limit=limit,
+            repo_name=repo_name,
+            language=language,
+        )
     except Exception as exc:  # pragma: no cover - embed/search errors
         logger.exception("Snippet query failed")
         raise HTTPException(status_code=500, detail=f"Snippet query failed: {exc}") from exc
@@ -437,37 +391,18 @@ async def query_snippets(
     return SnippetQueryResponse(query=query, results=results)
 
 
-# Helpers ---------------------------------------------------------------------
-
-
-def _record_to_summary(record: RepoRecord) -> RepoSummary:
-    return RepoSummary(
-        id=record.id,
-        url=record.url,
-        repo_name=record.repo_name,
-        status=record.status,
-        process_message=record.process_message,
-        fail_reason=record.fail_reason,
-        progress=record.progress,
-    )
-
-
-def _derive_repo_name(url: str | None) -> str | None:
-    if not url:
-        return None
-    cleaned = url.strip()
-    if cleaned.endswith(".git"):
-        cleaned = cleaned[:-4]
-    if cleaned.startswith("git@"):
-        _, _, remainder = cleaned.partition(":")
-        return remainder or cleaned
-    try:
-        from urllib.parse import urlparse
-
-        parsed = urlparse(cleaned)
-        path = (parsed.path or "").strip("/")
-        return path or cleaned
-    except Exception:  # pragma: no cover - defensive
-        return cleaned
-
-__all__ = ["router", "ApiSettings"]
+__all__ = [
+    "ApiSettings",
+    "get_settings",
+    "get_status_store",
+    "get_queue",
+    "get_vector_reader",
+    "get_vector_writer",
+    "record_to_summary",
+    "derive_repo_name",
+    "enqueue_repository_service",
+    "list_repositories_service",
+    "get_repository_service",
+    "delete_repository_service",
+    "query_snippets_service",
+]

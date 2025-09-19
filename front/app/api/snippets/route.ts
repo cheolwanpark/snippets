@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('query')
     const limitParam = searchParams.get('limit')
-    const repoName = searchParams.get('repo_name')
-    const language = searchParams.get('language')
+    const repoName = searchParams.get('repo_name')?.trim()
+    const language = searchParams.get('language')?.trim()
 
     // Validate required query parameter
     if (!query || typeof query !== 'string' || query.trim() === '') {
@@ -47,11 +47,11 @@ export async function GET(request: NextRequest) {
     backendUrl.searchParams.set('limit', limit.toString())
 
     // Add optional filters if provided
-    if (repoName && repoName.trim()) {
-      backendUrl.searchParams.set('repo_name', repoName.trim())
+    if (repoName) {
+      backendUrl.searchParams.set('repo_name', repoName)
     }
-    if (language && language.trim()) {
-      backendUrl.searchParams.set('language', language.trim())
+    if (language) {
+      backendUrl.searchParams.set('language', language)
     }
 
     const response = await fetch(backendUrl.toString())

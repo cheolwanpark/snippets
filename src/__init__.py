@@ -3,7 +3,7 @@
 from .agent import SnippetExtractor
 from .snippet import Snippet, SnippetStorage
 from .utils import FileData, FileInfo, FileLoader
-from .orchestration import ExtractionPipeline, extract_snippets_from_path
+from .orchestration import ExtractionPipeline
 
 __all__ = [
     "SnippetExtractor",
@@ -12,6 +12,5 @@ __all__ = [
     "FileLoader",
     "FileInfo",
     "FileData",
-    "ExtractionPipeline",
-    "extract_snippets_from_path",
+    "ExtractionPipeline"
 ]

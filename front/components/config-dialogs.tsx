@@ -52,9 +52,9 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
     setOpen(false)
   }
 
-  const handleExtensionsChange = (value: string) => {
-    const extensions = value.trim() ? value.split(',').map(ext => ext.trim()) : undefined
-    setLocalConfig(prev => ({ ...prev, extensions }))
+  const handlePatternsChange = (value: string) => {
+    const patterns = value.trim() ? value.split(',').map(pattern => pattern.trim()) : undefined
+    setLocalConfig(prev => ({ ...prev, patterns }))
   }
 
 
@@ -84,12 +84,12 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="extensions">File Extensions</Label>
+            <Label htmlFor="patterns">File Patterns</Label>
             <Input
-              id="extensions"
-              placeholder=".py, .js, .tsx, .ts"
-              value={localConfig.extensions?.join(',') || ""}
-              onChange={(e) => handleExtensionsChange(e.target.value)}
+              id="patterns"
+              placeholder="*.py, *.js, *.tsx, *.ts"
+              value={localConfig.patterns?.join(',') || ""}
+              onChange={(e) => handlePatternsChange(e.target.value)}
             />
           </div>
 

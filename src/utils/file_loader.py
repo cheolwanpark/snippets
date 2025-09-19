@@ -1,7 +1,9 @@
+import glob
 import logging
 import os
-from typing import List, NamedTuple
+from fnmatch import fnmatch
 from pathlib import Path
+from typing import List, NamedTuple, Sequence
 
 
 class FileInfo(NamedTuple):
@@ -24,10 +26,15 @@ class FileLoader:
     """Smart file discovery with filtering for source code analysis."""
 
     logger = logging.getLogger("snippet_extractor")
-    
-    # Supported file extensions
-    EXTENSIONS = {'.py', '.js', '.ts', '.rs'}
-    
+
+    # Supported file patterns
+    DEFAULT_PATTERNS: Sequence[str] = (
+        "*.py", "*.pyi", "*.js", "*.jsx", "*.ts", "*.tsx", "*.mjs", "*.cjs",
+        "*.java", "*.kt", "*.go", "*.rs", "*.c", "*.cc", "*.cpp", "*.h",
+        "*.hpp", "*.cs", "*.swift", "*.scala", "*.php", "*.rb", "*.pl", "*.sh",
+        "*.json", "*.yaml", "*.yml", "*.toml", "Dockerfile", "Dockerfile.*", "*.md",
+    )
+
     # Directories to exclude from search
     EXCLUDE_DIRS = {
         '__pycache__', '.venv', 'venv', 'node_modules', 'target', 'dist',
@@ -44,24 +51,24 @@ class FileLoader:
     # Maximum file size to process (1MB)
     MAX_FILE_SIZE = 1024 * 1024
     
-    def __init__(self, extensions=None, max_file_size=None, exclude_tests=True):
+    def __init__(self, patterns: Sequence[str] | None = None, max_file_size=None, exclude_tests=True):
         """Initialize file loader with optional custom settings.
         
         Args:
-            extensions: Set of file extensions to include (default: .py, .js, .ts, .rs)
+            patterns: Glob-style patterns to include (default: basic code file types)
             max_file_size: Maximum file size in bytes (default: 1MB)
             exclude_tests: Whether to exclude test files (default: True)
         """
-        self.extensions = extensions or self.EXTENSIONS
+        self.patterns = list(patterns) if patterns else list(self.DEFAULT_PATTERNS)
         self.max_file_size = max_file_size or self.MAX_FILE_SIZE
         self.exclude_tests = exclude_tests
     
     def detect_files(self, path: str) -> List[FileInfo]:
         """Detect source files in the given path (file or directory).
-        
+
         Args:
             path: File or directory path to analyze
-            
+
         Returns:
             List of FileInfo objects for discovered files
             
@@ -69,6 +76,27 @@ class FileLoader:
             FileNotFoundError: If path doesn't exist
             ValueError: If path is neither file nor directory
         """
+        path_str = str(path)
+
+        if glob.has_magic(path_str):
+            matched_paths = sorted(Path(p) for p in glob.glob(path_str, recursive=True))
+            if not matched_paths:
+                raise FileNotFoundError(f"No files match pattern: {path}")
+
+            files: List[FileInfo] = []
+            base_dir = self._infer_base_dir_from_pattern(path_str)
+
+            for match_path in matched_paths:
+                if match_path.is_file():
+                    files.extend(self._analyze_single_file(match_path, base_dir=base_dir))
+                elif match_path.is_dir():
+                    files.extend(self._analyze_directory(match_path))
+
+            if not files:
+                raise FileNotFoundError(f"No files match pattern: {path}")
+
+            return files
+
         path_obj = Path(path)
         
         if not path_obj.exists():
@@ -81,11 +109,12 @@ class FileLoader:
         else:
             raise ValueError(f"Path is neither file nor directory: {path}")
     
-    def _analyze_single_file(self, file_path: Path) -> List[FileInfo]:
+    def _analyze_single_file(self, file_path: Path, base_dir: Path | None = None) -> List[FileInfo]:
         """Analyze a single file and return FileInfo if it qualifies."""
-        if not self._should_include_file(file_path):
+        relative_path = self._compute_relative_path(file_path, base_dir)
+        if not self._should_include_file(file_path, relative_path):
             return []
-        
+
         try:
             stat_info = file_path.stat()
             return [FileInfo(
@@ -110,8 +139,12 @@ class FileLoader:
                 
                 for filename in filenames:
                     file_path = root_path / filename
-                    
-                    if self._should_include_file(file_path):
+                    try:
+                        relative_path = file_path.relative_to(dir_path)
+                    except ValueError:
+                        relative_path = Path(filename)
+
+                    if self._should_include_file(file_path, relative_path):
                         try:
                             stat_info = file_path.stat()
                             files.append(FileInfo(
@@ -130,7 +163,7 @@ class FileLoader:
     
     def load_files(self, path: str) -> List[FileData]:
         """Detect and load all files into memory.
-        
+
         Args:
             path: File or directory path to analyze
             
@@ -140,9 +173,14 @@ class FileLoader:
         file_infos = self.detect_files(path)
         files_data = []
         
-        base_input = Path(path).resolve()
-        base_dir = base_input.parent if base_input.is_file() else base_input
-        
+        path_str = str(path)
+        if glob.has_magic(path_str):
+            base_dir = self._infer_base_dir_from_pattern(path_str)
+        else:
+            base_input = Path(path_str).resolve()
+            base_dir = base_input.parent if base_input.is_file() else base_input
+        base_dir = base_dir.resolve()
+
         for file_info in file_infos:
             try:
                 with open(file_info.path, 'r', encoding='utf-8') as f:
@@ -159,13 +197,13 @@ class FileLoader:
                 self.logger.warning("Failed to load %s: %s", file_info.path, e)
                 
         return files_data
-    
-    def _should_include_file(self, file_path: Path) -> bool:
+
+    def _should_include_file(self, file_path: Path, relative_path: Path) -> bool:
         """Determine if a file should be included in processing."""
-        # Check extension
-        if file_path.suffix not in self.extensions:
+
+        if not self._matches_patterns(relative_path):
             return False
-        
+
         # Check file size
         try:
             if file_path.stat().st_size > self.max_file_size:
@@ -187,6 +225,52 @@ class FileLoader:
             return True
         except (UnicodeDecodeError, OSError, PermissionError):
             return False
+
+    def _matches_patterns(self, relative_path: Path) -> bool:
+        """Return True if the relative path matches any configured patterns."""
+
+        if not self.patterns:
+            return True
+
+        path_as_posix = relative_path.as_posix()
+        filename = relative_path.name
+
+        for pattern in self.patterns:
+            normalized = pattern.replace('\\', '/').lstrip('/')
+            candidate = path_as_posix if '/' in normalized else filename
+
+            # Use fnmatch to apply glob semantics without pathlib quirks.
+            if fnmatch(candidate, normalized):
+                return True
+
+        return False
+
+    def _compute_relative_path(self, file_path: Path, base_dir: Path | None) -> Path:
+        """Compute the path relative to the detected root for pattern handling."""
+        if base_dir is None:
+            return Path(file_path.name)
+
+        resolved_file = file_path.resolve()
+        resolved_base = base_dir.resolve()
+        try:
+            return resolved_file.relative_to(resolved_base)
+        except ValueError:
+            return Path(file_path.name)
+
+    def _infer_base_dir_from_pattern(self, pattern: str) -> Path:
+        """Infer the search root from the leading, non-glob portion of a pattern."""
+        pattern_path = Path(pattern).expanduser()
+        base_parts: list[str] = []
+
+        for part in pattern_path.parts:
+            if glob.has_magic(part):
+                break
+            base_parts.append(part)
+
+        if not base_parts:
+            return Path(".").resolve()
+
+        return Path(*base_parts).resolve()
     
     def get_stats(self, files: List[FileInfo]) -> dict:
         """Get statistics about detected files."""

@@ -232,6 +232,8 @@ class SnippetVectorWriter:
         embedding_key: str,
     ) -> dict[str, object]:
         payload = snippet.model_dump(exclude_none=True)
+        if language := payload.get("language"):
+            payload["language"] = language.lower()
         payload["embedding_input"] = embedding_input
         payload["embedding_key"] = embedding_key
         return payload

@@ -48,7 +48,8 @@ class SnippetVectorReader:
         query_text: str,
         *,
         limit: int = 5,
-        query_filter: models.Filter | None = None,
+        repo_name: str | None = None,
+        language: str | None = None,
     ) -> List[Snippet]:
         """Run an MMR search against the stored snippets."""
         if not query_text.strip():
@@ -63,13 +64,18 @@ class SnippetVectorReader:
             return []
         query_vector = vectors[0]
 
+        combined_filter = self._combine_filters(
+            repo_name=repo_name,
+            language=language,
+        )
+
         try:
             results = self._client.mmr(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=limit,
                 lambda_coef=self.lambda_coef,
-                filter=query_filter,
+                filter=combined_filter,
                 with_payload=True,
             )
         except AttributeError:
@@ -87,7 +93,7 @@ class SnippetVectorReader:
             results = self._client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
-                query_filter=query_filter,
+                query_filter=combined_filter,
                 limit=limit,
                 with_payload=True,
             )
@@ -221,6 +227,35 @@ class SnippetVectorReader:
         if self._embedder is None:
             self._embedder = GeminiEmbeddingClient(self._embedding_config)
         return self._embedder
+
+    def _combine_filters(
+        self,
+        *,
+        repo_name: str | None,
+        language: str | None,
+    ) -> models.Filter | None:
+        conditions: list[models.FieldCondition] = []
+
+        if repo_name and repo_name.strip():
+            conditions.append(
+                models.FieldCondition(
+                    key="repo_name",
+                    match=models.MatchValue(value=repo_name.strip()),
+                )
+            )
+
+        if language and language.strip():
+            conditions.append(
+                models.FieldCondition(
+                    key="language",
+                    match=models.MatchValue(value=language.strip()),
+                )
+            )
+
+        if not conditions:
+            return None
+
+        return models.Filter(must=conditions)
 
     def _list_completed_ingest_ids(self, limit: int) -> List[str]:
         if limit <= 0:

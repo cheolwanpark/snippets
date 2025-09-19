@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .routes import ApiSettings, router
+from .route import router
+from .service import ApiSettings
 
 
 def create_app() -> FastAPI:

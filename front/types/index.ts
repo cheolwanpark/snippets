@@ -14,8 +14,8 @@ export interface RepoCreateRequest {
   branch?: string | null
   /** Include test directories when extracting */
   include_tests?: boolean
-  /** Optional list of file extensions to include */
-  extensions?: string[] | null
+  /** Optional glob patterns for files to include */
+  patterns?: string[] | null
   /** Maximum file size (bytes) to consider */
   max_file_size?: number | null
   /** Optional repository identifier to store alongside snippets */
@@ -102,7 +102,7 @@ export interface ApiError {
 // Configuration types for dialogs
 export interface RepoConfig {
   branch?: string
-  extensions?: string[]
+  patterns?: string[]
   max_file_size?: number
   include_tests?: boolean
 }

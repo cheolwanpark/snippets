@@ -111,16 +111,19 @@ export function useRepositories(): UseRepositoriesState & UseRepositoriesActions
     setState(prev => ({ ...prev, searchLoading: true, searchError: null }))
 
     try {
+      const trimmedRepoName = repoName?.trim()
+      const trimmedLanguage = language?.trim()
+
       const params = new URLSearchParams({
         query,
         limit: limit.toString(),
       })
 
-      if (repoName) {
-        params.set('repo_name', repoName)
+      if (trimmedRepoName) {
+        params.set('repo_name', trimmedRepoName)
       }
-      if (language) {
-        params.set('language', language)
+      if (trimmedLanguage) {
+        params.set('language', trimmedLanguage)
       }
 
       const response = await fetch(`/api/snippets?${params}`)

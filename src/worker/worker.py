@@ -13,6 +13,7 @@ from ..orchestration import ExtractionPipeline
 from ..vectordb.config import DBConfig, EmbeddingConfig
 from ..vectordb.writer import SnippetVectorWriter
 from ..utils.github_repo import GitHubRepo
+from ..utils.file_loader import FileLoader
 from ..snippet import Snippet
 from .status import RepoStatusStore
 
@@ -79,7 +80,7 @@ def process_repository(
     repo_name: str | None = None,
     branch: str | None = None,
     include_tests: bool = False,
-    extensions: Sequence[str] | None = None,
+    patterns: Sequence[str] | None = None,
     max_file_size: int | None = None,
 ) -> dict[str, Any]:
     """Clone a repository, extract snippets, and persist them to Qdrant."""
@@ -111,9 +112,11 @@ def process_repository(
                 repo_name=derived_repo_name,
             )
 
+            effective_patterns = list(patterns) if patterns else list(FileLoader.DEFAULT_PATTERNS)
+
             pipeline = ExtractionPipeline(
                 max_concurrency=settings.pipeline_max_concurrency,
-                extensions=extensions,
+                patterns=effective_patterns,
                 max_file_size=max_file_size,
                 include_tests=include_tests,
             )

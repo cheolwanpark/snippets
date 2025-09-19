@@ -19,12 +19,12 @@ class ExtractionPipeline:
         self,
         *,
         max_concurrency: int = 5,
-        extensions: Optional[Sequence[str]] = None,
+        patterns: Optional[Sequence[str]] = None,
         max_file_size: Optional[int] = None,
         include_tests: bool = False,
     ) -> None:
         self.max_concurrency = max_concurrency
-        self.extensions = self._normalize_extensions(extensions)
+        self.patterns = self._normalize_patterns(patterns)
         self.max_file_size = max_file_size
         self.include_tests = include_tests
         self.executor: Optional[ThreadPoolExecutor] = None
@@ -40,15 +40,13 @@ class ExtractionPipeline:
     ) -> List[Snippet]:
         """Extract snippets from files under the provided path."""
         loader = FileLoader(
-            extensions=self.extensions,
+            patterns=self.patterns,
             max_file_size=self.max_file_size,
             exclude_tests=not self.include_tests,
         )
 
         files_data = loader.load_files(path)
         self.storage.clear_snippets()
-        for file_data in files_data:
-            self.storage.register_file(file_data.relative_path)
 
         if files_data:
             logger.info("Loaded %d files from %s", len(files_data), path)
@@ -171,31 +169,23 @@ class ExtractionPipeline:
         return self._last_run_stats
 
     @staticmethod
-    def _normalize_extensions(extensions: Optional[Sequence[str]]) -> Optional[Set[str]]:
-        if not extensions:
+    def _normalize_patterns(patterns: Optional[Sequence[str]]) -> Optional[Set[str]]:
+        if not patterns:
             return None
-        normalized = set()
-        for ext in extensions:
-            if not ext:
+
+        normalized: Set[str] = set()
+        for pattern in patterns:
+            if not pattern:
                 continue
-            normalized.add(ext if ext.startswith('.') else f'.{ext}')
+            stripped = pattern.strip()
+            if not stripped:
+                continue
+            if any(char in stripped for char in "*?[]") or "/" in stripped or "\\" in stripped:
+                normalized.add(stripped)
+                continue
+            if stripped.startswith('.'):
+                normalized.add(f"*{stripped}")
+            else:
+                normalized.add(f"*.{stripped}")
         return normalized or None
 
-
-def extract_snippets_from_path(
-    path: str,
-    *,
-    max_concurrency: int = 5,
-    extensions: Optional[Sequence[str]] = None,
-    max_file_size: Optional[int] = None,
-    include_tests: bool = False,
-    on_file_complete: Optional[Callable[[str, bool, int, int], None]] = None,
-) -> List[Snippet]:
-    """Convenience helper to run the extraction pipeline and return snippets."""
-    pipeline = ExtractionPipeline(
-        max_concurrency=max_concurrency,
-        extensions=extensions,
-        max_file_size=max_file_size,
-        include_tests=include_tests,
-    )
-    return pipeline.run(path=path, on_file_complete=on_file_complete)
