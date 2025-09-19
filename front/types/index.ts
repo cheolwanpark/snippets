@@ -99,6 +99,20 @@ export interface ApiError {
   status?: number
 }
 
+// Configuration types for dialogs
+export interface RepoConfig {
+  branch?: string
+  extensions?: string[]
+  max_file_size?: number
+  include_tests?: boolean
+}
+
+export interface SearchConfig {
+  repo_name?: string
+  language?: string
+  limit?: number
+}
+
 // Utility types for component props
 export interface RepositoryListProps {
   repositories: RepoSummary[]

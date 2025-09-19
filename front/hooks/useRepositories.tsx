@@ -15,7 +15,7 @@ interface UseRepositoriesState {
 interface UseRepositoriesActions {
   fetchRepositories: () => Promise<void>
   createRepository: (data: RepoCreateRequest) => Promise<void>
-  searchSnippets: (query: string, limit?: number) => Promise<void>
+  searchSnippets: (query: string, limit?: number, repoName?: string, language?: string) => Promise<void>
   clearSearch: () => void
   clearError: () => void
   refreshRepository: (id: string) => Promise<void>
@@ -107,14 +107,23 @@ export function useRepositories(): UseRepositoriesState & UseRepositoriesActions
   /**
    * Search code snippets
    */
-  const searchSnippets = useCallback(async (query: string, limit: number = 5) => {
+  const searchSnippets = useCallback(async (query: string, limit: number = 5, repoName?: string, language?: string) => {
     setState(prev => ({ ...prev, searchLoading: true, searchError: null }))
 
     try {
-      const response = await fetch(`/api/snippets?${new URLSearchParams({
+      const params = new URLSearchParams({
         query,
         limit: limit.toString(),
-      })}`)
+      })
+
+      if (repoName) {
+        params.set('repo_name', repoName)
+      }
+      if (language) {
+        params.set('language', language)
+      }
+
+      const response = await fetch(`/api/snippets?${params}`)
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }

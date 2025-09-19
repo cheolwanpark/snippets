@@ -11,12 +11,15 @@ import { toast } from "sonner"
 import { RepositoryList } from "./repository-list"
 import { useRepositoryUtils } from "@/hooks/useRepositoryUtils"
 import { useRepositories } from "@/hooks/useRepositories"
-import type { RepoCreateRequest } from "@/types"
+import { RepoConfigDialog, SearchConfigDialog } from "./config-dialogs"
+import type { RepoCreateRequest, RepoConfig, SearchConfig } from "@/types"
 
 export function RepoEmbedder() {
   const [mode, setMode] = useState<"embed" | "query">("embed")
   const [repoUrl, setRepoUrl] = useState("")
   const [query, setQuery] = useState("")
+  const [repoConfig, setRepoConfig] = useState<RepoConfig>({})
+  const [searchConfig, setSearchConfig] = useState<SearchConfig>({ limit: 5 })
 
   // Real API integration
   const {
@@ -59,6 +62,7 @@ export function RepoEmbedder() {
     try {
       const repoData: RepoCreateRequest = {
         url: repoUrl.trim(),
+        ...repoConfig,
       }
 
       await createRepository(repoData)
@@ -74,8 +78,13 @@ export function RepoEmbedder() {
     e.preventDefault()
     if (!query.trim()) return
 
-    await searchSnippets(query.trim(), 5)
-  }, [query, searchSnippets])
+    await searchSnippets(
+      query.trim(),
+      searchConfig.limit || 5,
+      searchConfig.repo_name,
+      searchConfig.language
+    )
+  }, [query, searchSnippets, searchConfig])
 
   // Show search completion toast
   useEffect(() => {
@@ -115,6 +124,7 @@ export function RepoEmbedder() {
                 <CardTitle className="flex items-center gap-2">
                   <GitBranch className="h-5 w-5" />
                   Add Repository
+                  <RepoConfigDialog config={repoConfig} onConfigChange={setRepoConfig} />
                 </CardTitle>
                 <div className="inline-flex gap-1 rounded-lg border p-1.5">
                   <Button
@@ -221,6 +231,7 @@ export function RepoEmbedder() {
                 <CardTitle className="flex items-center gap-2">
                   <Search className="h-5 w-5" />
                   Search Code Snippets
+                  <SearchConfigDialog config={searchConfig} onConfigChange={setSearchConfig} />
                 </CardTitle>
                 <div className="inline-flex gap-1 rounded-lg border p-1.5">
                   <Button

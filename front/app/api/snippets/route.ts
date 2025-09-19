@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('query')
     const limitParam = searchParams.get('limit')
+    const repoName = searchParams.get('repo_name')
+    const language = searchParams.get('language')
 
     // Validate required query parameter
     if (!query || typeof query !== 'string' || query.trim() === '') {
@@ -43,6 +45,14 @@ export async function GET(request: NextRequest) {
     const backendUrl = new URL('/snippets', API_BASE_URL)
     backendUrl.searchParams.set('query', query.trim())
     backendUrl.searchParams.set('limit', limit.toString())
+
+    // Add optional filters if provided
+    if (repoName && repoName.trim()) {
+      backendUrl.searchParams.set('repo_name', repoName.trim())
+    }
+    if (language && language.trim()) {
+      backendUrl.searchParams.set('language', language.trim())
+    }
 
     const response = await fetch(backendUrl.toString())
 
