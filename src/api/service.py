@@ -15,6 +15,7 @@ from ..vectordb.reader import SnippetVectorReader
 from ..vectordb.writer import SnippetVectorWriter
 from ..worker.status import RepoRecord, RepoStatusStore, STATUS_DONE
 from ..worker.worker import process_repository
+from ..utils import Reranker
 from ..utils.file_loader import FileLoader
 from .model import (
     RepoCreateRequest,
@@ -291,16 +292,26 @@ def query_snippets_service(
     repo_name: str | None = None,
     language: str | None = None,
 ) -> SnippetQueryResponse:
+    reranker: Reranker | None = None
+    search_limit = limit
+    if limit > 0 and Reranker.is_available():
+        reranker = Reranker()
+        search_limit = limit * 2
+
     try:
         snippets = reader.query(
             query,
-            limit=limit,
+            limit=search_limit,
             repo_name=repo_name,
             language=language,
         )
     except Exception as exc:  # pragma: no cover - embed/search errors
         logger.exception("Snippet query failed")
         raise HTTPException(status_code=500, detail=f"Snippet query failed: {exc}") from exc
+
+    if reranker:
+        reordered = reranker.rerank(query, snippets)
+    snippets = snippets[:limit] if limit > 0 else []
 
     results = [SnippetResponse.from_snippet(snippet) for snippet in snippets]
     return SnippetQueryResponse(query=query, results=results)

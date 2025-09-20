@@ -56,7 +56,10 @@ CLAUDE_CODE_OAUTH_TOKEN=your_claude_token_here
 EMBEDDING_API_KEY=your_gemini_api_key_here
 
 # Optional: GitHub PAT, required for PRIVATE repository access
-GITHUB_TOKEN=your_github_pat
+GITHUB_TOKEN=your_github_pat_here
+
+# Optional: Cohere API key, required for reranking
+COHERE_API_KEY=your_cohere_api_key_here
 
 # Optional: Customize ports
 FRONT_PORT=3000
@@ -383,7 +386,7 @@ Snippets is built as a microservices architecture with clear separation of conce
 1. **Query Input**: User enters search query (Web UI or MCP)
 2. **Query Embedding**: Convert query to vector using same embedding model
 3. **Vector Search**: Qdrant performs similarity search with filters
-4. **Result Ranking**: Results scored and ranked by relevance
+4. **Result Ranking**: Results reranked by cohere rerank API
 5. **Response**: Formatted results returned with snippet metadata
 
 ### Technology Stack
