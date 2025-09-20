@@ -13,4 +13,5 @@ dependencies = [
     "redis>=5.0.0",
     "rq>=1.15.0",
     "uvicorn>=0.23.0",
+    "fastmcp>=2.12.3",
 ]

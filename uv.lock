@@ -1305,6 +1305,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "claude-agent-toolkit" },
     { name = "fastapi" },
+    { name = "fastmcp" },
     { name = "google-genai" },
     { name = "pydantic" },
     { name = "qdrant-client" },
@@ -1317,6 +1318,7 @@ dependencies = [
 requires-dist = [
     { name = "claude-agent-toolkit", specifier = ">=0.2.2" },
     { name = "fastapi", specifier = ">=0.111.0" },
+    { name = "fastmcp", specifier = ">=2.12.3" },
     { name = "google-genai", specifier = ">=0.3.0" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "qdrant-client", specifier = ">=1.9.0" },

@@ -8,6 +8,7 @@ services:
       - ./.env
     ports:
       - "8000:8000"
+      - "${MCP_PORT:-8080}:8000"
     depends_on:
       - redis
       - qdrant
@@ -31,7 +32,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.front
     ports:
-      - "3000:3000"
+      - "${FRONT_PORT:-3000}:3000"
     environment:
       - API_BASE_URL=http://api:8000
     depends_on:
