@@ -167,7 +167,7 @@ export function RepoEmbedder() {
                       Creating...
                     </>
                   ) : (
-                    "Embed Repository"
+                    "Embed"
                   )}
                 </Button>
               </form>
