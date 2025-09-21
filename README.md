@@ -91,6 +91,14 @@ This starts all services:
 4. Monitor progress in the dashboard
 5. Search your snippets in 'Query' tab once processing completes!
 
+### 5. Connect MCP server to claude
+
+```bash
+claude mcp add --transport http snippets http://localhost:8080/mcp
+```
+
+This enables Claude Code to search your processed snippets directly during development.
+
 ## Configuration
 
 ### Essential Environment Variables
