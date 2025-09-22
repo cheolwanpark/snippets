@@ -1,4 +1,4 @@
-<img width="1492" height="274" alt="banner" align="center" src="https://github.com/user-attachments/assets/05cc5514-bb79-4a66-8190-36cded6ccc36" />
+# SNIPPETS
 
 ## Overview
 
