@@ -297,7 +297,7 @@ docker-compose up -d
 
 #### Processing Large Repositories
 
-- Set reasonable file size limits (default: 100KB)
+- Set reasonable file size limits (default: 500KB)
 - Use file filters to exclude irrelevant files
 - Process repositories during off-peak hours
 - Monitor worker memory usage

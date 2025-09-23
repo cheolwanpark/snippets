@@ -5,6 +5,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import List, NamedTuple, Sequence
 
+from .chunker import chunk_file_data
+
 
 class FileInfo(NamedTuple):
     """Information about a detected source file."""
@@ -48,19 +50,30 @@ class FileLoader:
         '.min.', '-min.', '.bundle.', '.chunk.'
     }
     
-    # Maximum file size to process (1MB)
-    MAX_FILE_SIZE = 1024 * 1024
+    # Default file size cap (≈500 KB) and chunk threshold (≈1.8 MB).
+    DEFAULT_MAX_FILE_SIZE = 500 * 1024
+    DEFAULT_MAX_CHUNK_SIZE = 1_800_000
     
     def __init__(self, patterns: Sequence[str] | None = None, max_file_size=None, exclude_tests=True):
         """Initialize file loader with optional custom settings.
         
         Args:
             patterns: Glob-style patterns to include (default: basic code file types)
-            max_file_size: Maximum file size in bytes (default: 1MB)
+            max_file_size: Optional maximum file size in bytes. Defaults to ~500 KB;
+                pass 0 to disable the size cap. Chunking uses a 1.8 MB threshold
+                for large files.
             exclude_tests: Whether to exclude test files (default: True)
         """
         self.patterns = list(patterns) if patterns else list(self.DEFAULT_PATTERNS)
-        self.max_file_size = max_file_size or self.MAX_FILE_SIZE
+        if max_file_size == 0:
+            max_file_size = None
+
+        if max_file_size is None:
+            self.max_file_size = self.DEFAULT_MAX_FILE_SIZE
+            self.max_chunk_size = self.DEFAULT_MAX_CHUNK_SIZE
+        else:
+            self.max_file_size = max_file_size
+            self.max_chunk_size = max(self.DEFAULT_MAX_CHUNK_SIZE, max_file_size)
         self.exclude_tests = exclude_tests
     
     def detect_files(self, path: str) -> List[FileInfo]:
@@ -186,13 +199,30 @@ class FileLoader:
                 with open(file_info.path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 relative_path = Path(os.path.relpath(file_info.path, start=str(base_dir))).as_posix()
-                files_data.append(FileData(
+                file_data = FileData(
                     path=file_info.path,
                     relative_path=relative_path,
                     content=content,
                     size=len(content),  # Use actual content size
                     extension=file_info.extension
-                ))
+                )
+
+                if file_data.size > self.max_chunk_size:
+                    self.logger.info(
+                        "Chunking %s (%d bytes) into pieces <= %d bytes",
+                        file_data.relative_path,
+                        file_data.size,
+                        self.max_chunk_size,
+                    )
+                    chunked = chunk_file_data(file_data, max_chunk_size=self.max_chunk_size)
+                    self.logger.info(
+                        "Created %d chunks for %s",
+                        len(chunked),
+                        file_data.relative_path,
+                    )
+                    files_data.extend(chunked)
+                else:
+                    files_data.append(file_data)
             except Exception as e:
                 self.logger.warning("Failed to load %s: %s", file_info.path, e)
                 
@@ -204,12 +234,12 @@ class FileLoader:
         if not self._matches_patterns(relative_path):
             return False
 
-        # Check file size
-        try:
-            if file_path.stat().st_size > self.max_file_size:
+        if self.max_file_size is not None:
+            try:
+                if file_path.stat().st_size > self.max_file_size:
+                    return False
+            except (OSError, PermissionError):
                 return False
-        except (OSError, PermissionError):
-            return False
         
         # Check if it's a test file (if exclusion is enabled)
         if self.exclude_tests:

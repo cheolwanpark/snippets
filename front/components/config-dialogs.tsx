@@ -111,7 +111,7 @@ export function RepoConfigDialog({ config, onConfigChange }: RepoConfigDialogPro
             <Input
               id="maxFileSize"
               type="number"
-              placeholder="102400"
+              placeholder="512000"
               className="placeholder:text-gray-400"
               value={localConfig.max_file_size || ""}
               onChange={(e) => setLocalConfig(prev => ({
