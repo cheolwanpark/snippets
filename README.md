@@ -9,7 +9,8 @@
 
 ### Key Features
 
-- **🚀 Automated Repository Processing**: Extract meaningful code snippets from any GitHub repository
+- **🚀 Use Your Claude Subscription**: Access this tool with your Claude subscription plan and pay only for embedding and reranking — typically around $1 for most use cases.
+- **🤖 Automated Repository Processing**: Extract meaningful code snippets from any GitHub repository
 - **🔍 Semantic Search**: Find code by meaning, not just keywords, using vector embeddings
 - **🔧 MCP Integration**: Seamless integration with Claude Code through Model Context Protocol
 - **⚡ Background Processing**: Efficient queue-based processing for large repositories
