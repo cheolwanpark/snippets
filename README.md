@@ -9,7 +9,7 @@
 
 ### Key Features
 
-- **🚀 Use Your Claude Subscription**: Access this tool with your Claude subscription plan and pay only for embedding and reranking — typically around $1 for most use cases.
+- **🚀 Use Your Claude Subscription**: Access this tool with your Claude subscription plan. no extra cost!
 - **🤖 Automated Repository Processing**: Extract meaningful code snippets from any GitHub repository
 - **🔍 Semantic Search**: Find code by meaning, not just keywords, using vector embeddings
 - **🔧 MCP Integration**: Seamless integration with Claude Code through Model Context Protocol
@@ -31,7 +31,7 @@
 - **Docker & Docker Compose**: For containerized deployment
 - **API Keys**:
   - Claude Code OAuth Token (from you subscription, `claude setup-token`)
-  - Google Gemini API key (for embeddings)
+  - Google Gemini API key (for embeddings, you can claim Free API Key)
 
 ### 1. Clone and Setup
 
