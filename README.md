@@ -1,10 +1,10 @@
-# SNIPPETS
-
-**Snippets** is an intelligent code repository system that automatically extracts, processes, and indexes code snippets from GitHub repositories into a searchable vector database. It combines AI-powered code analysis with semantic search capabilities to help developers quickly find relevant code examples and patterns.
-
 <p align="center">
   <img src="assets/demo.gif"/>
 </p>
+
+# SNIPPETS
+
+**Snippets** is an intelligent code repository system that automatically extracts, processes, and indexes code snippets from GitHub repositories into a searchable vector database. It combines AI-powered code analysis with semantic search capabilities to help developers quickly find relevant code examples and patterns.
 
 ### Key Features
 
