@@ -55,7 +55,7 @@ class SnippetExtractor:
         agent = Agent(
             oauth_token=self.oauth_token,
             system_prompt=system_prompt,
-            model="sonnet",
+            model="claude-sonnet-4-5-20250929",
             tools=[storage],
             executor=ExecutorType.SUBPROCESS if self.use_subprocess else ExecutorType.DOCKER,
         )
