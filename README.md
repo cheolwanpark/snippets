@@ -125,8 +125,8 @@ QDRANT_URL=http://qdrant:6333
 REDIS_URL=redis://redis:6379
 
 # Processing Settings
-EMBEDDING_MODEL=gemini-pro    # Embedding model to use
-MAX_FILE_SIZE_MB=1           # Maximum file size to process
+EMBEDDING_MODEL=gemini-embedding-001    # Embedding model to use
+PIPELINE_MAX_CONCURRENCY=10             # Concurrency setup - how many files will be processed in parallel
 ```
 
 ### Getting API Keys
@@ -184,6 +184,11 @@ claude mcp add --transport http snippets http://localhost:8080/mcp
 # OR configure the mcp server for user scope
 claude mcp add -s user --transport http snippets http://localhost:8080/mcp
 ```
+```
+# $CODEX_HOME/config.toml
+[mcp_servers.snippets]
+url = "http://localhost:8080/mcp"
+```
 
 #### Using the Search Tool
 
@@ -216,98 +221,6 @@ Use the MCP integration for:
 - **Pattern Research**: Explore different approaches to common problems
 - **Learning**: Understand how concepts are implemented across repositories
 - **Code Review**: Find similar implementations for comparison
-
-## Troubleshooting
-
-### Common Issues
-
-#### Repository Processing Fails
-
-**Problem**: Repository gets stuck in "Processing" state
-**Solutions**:
-- Check API key validity in docker logs: `docker-compose logs api`
-- Verify repository is public and accessible
-- Check file size limits - large repositories may timeout
-- Restart worker: `docker-compose restart worker`
-
-#### Empty Search Results
-
-**Problem**: Search returns no snippets
-**Solutions**:
-- Verify repository processing completed successfully
-- Check if files were actually processed (some file types are filtered)
-- Try broader search terms
-- Increase result limit to 50
-
-#### MCP Connection Issues
-
-**Problem**: Claude Code cannot connect to MCP server
-**Solutions**:
-- Verify MCP port is exposed: `docker-compose ps`
-- Check MCP server logs: `docker-compose logs api`
-- Ensure firewall allows connections to port 8080
-- Try direct HTTP connection to http://localhost:8080/mcp
-
-#### Performance Issues
-
-**Problem**: Slow search or processing
-**Solutions**:
-- Monitor resource usage: `docker stats`
-- Increase Docker memory allocation
-- Reduce concurrent processing in worker settings
-- Consider using faster embedding models
-
-### Debugging Tips
-
-#### Check Service Health
-
-```bash
-# View all service status
-docker-compose ps
-
-# Check specific service logs
-docker-compose logs -f api
-docker-compose logs -f worker
-docker-compose logs -f front
-
-# Monitor resource usage
-docker stats
-```
-
-#### Database Inspection
-
-```bash
-# Access Qdrant dashboard
-open http://localhost:6333/dashboard
-
-# Check Redis queue status
-docker-compose exec redis redis-cli
-> LLEN repo-ingest  # Check queue length
-```
-
-#### Reset Everything
-
-```bash
-# Nuclear option: reset all data
-docker-compose down -v
-docker-compose up -d
-```
-
-### Performance Optimization
-
-#### Processing Large Repositories
-
-- Set reasonable file size limits (default: 500KB)
-- Use file filters to exclude irrelevant files
-- Process repositories during off-peak hours
-- Monitor worker memory usage
-- consider using large PIPELINE_MAX_CONCURRENCY
-
-#### Search Performance
-
-- Use specific search terms rather than very broad queries
-- Filter by language or repository when possible
-- Consider the trade-off between result quality and quantity
 
 ## Architecture
 
@@ -399,24 +312,10 @@ Snippets is built as a microservices architecture with clear separation of conce
 5. **Response**: Formatted results returned with snippet metadata
 
 ### Technology Stack
-
-#### Backend
-- **Python 3.12**: Core runtime
 - **FastAPI**: Web framework and API server
 - **RQ + Redis**: Task queue and caching
 - **Qdrant**: Vector database
-- **Claude Agent Toolkit**: AI-powered code analysis
+- **Claude Agent Toolkit**: Claude Code powered analysis
 - **Google Gemini**: Text embedding generation
-
-#### Frontend
-- **Next.js 14**: React framework
-- **TypeScript**: Type safety
-- **Tailwind CSS**: Styling framework
-- **Radix UI**: Component primitives
-- **Lucide**: Icon library
-
-#### Infrastructure
-- **Docker**: Containerization
-- **Docker Compose**: Multi-service orchestration
-- **Redis**: Message broker and cache
-- **Nginx**: Reverse proxy (production)
+- **Next.js**: Frontend
+- **Docker Compose**: Deployment
