@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Annotated, Dict, List
 
-from claude_agent_toolkit import BaseTool, tool
+from ..wrapper import BaseTool, tool
 
 from .model import Snippet
 

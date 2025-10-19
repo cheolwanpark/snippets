@@ -1,15 +1,15 @@
 import logging
 import os
 
-from claude_agent_toolkit import (
-    Agent,
-    ConfigurationError,
-    ConnectionError as ClaudeConnectionError,
-    ExecutionError,
-    ExecutorType,
+from claude_agent_sdk import (
+    CLIConnectionError,
+    CLINotFoundError,
+    ClaudeSDKError,
+    ProcessError,
 )
 
 from ..snippet import SnippetStorage
+from ..wrapper import Agent
 from .prompt import SYSTEM_PROMPT, PROMPT
 
 
@@ -19,9 +19,8 @@ logger = logging.getLogger("snippet_extractor")
 class SnippetExtractor:
     def __init__(self) -> None:
         self.oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
-        self.use_subprocess = os.getenv("USE_SUBPROCESS", "false").lower() == "true"
         if not self.oauth_token:
-            raise ConfigurationError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
+            raise RuntimeError("CLAUDE_CODE_OAUTH_TOKEN environment variable is required")
 
     def _calculate_top_n(self, content: str) -> int:
         """Return the max snippets to extract based on line count heuristic."""
@@ -52,12 +51,14 @@ class SnippetExtractor:
             return True
 
         system_prompt = SYSTEM_PROMPT.format(top_n=top_n)
+        server = storage.server
+        server_name = getattr(server, "name", storage.__class__.__name__.lower())
         agent = Agent(
             oauth_token=self.oauth_token,
             system_prompt=system_prompt,
             model="claude-sonnet-4-5-20250929",
-            tools=[storage],
-            executor=ExecutorType.SUBPROCESS if self.use_subprocess else ExecutorType.DOCKER,
+            mcp_servers={server_name: server},
+            allowed_tools=[],
         )
 
         user_prompt = PROMPT.format(
@@ -67,17 +68,17 @@ class SnippetExtractor:
         )
 
         try:
-            result = await agent.run(user_prompt)
-        except (ConfigurationError, ClaudeConnectionError, ExecutionError) as exc:
-            logger.error("Agent.run failed for %s: %s", path, exc)
+            result = await agent.arun(user_prompt)
+        except (CLINotFoundError, CLIConnectionError, ProcessError, ClaudeSDKError) as exc:
+            logger.error("Agent.arun failed for %s: %s", path, exc)
             return False
         except Exception:
-            logger.exception("Unexpected failure during Agent.run for %s", path)
+            logger.exception("Unexpected failure during Agent.arun for %s", path)
             return False
 
         if not isinstance(result, str):
             logger.error(
-                "Agent.run returned unsupported type for %s: %s",
+                "Agent.arun returned unsupported type for %s: %s",
                 path,
                 type(result).__name__,
             )
