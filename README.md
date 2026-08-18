@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="assets/demo.gif"/>
 </p>
@@ -29,7 +31,7 @@
 
 - **Docker & Docker Compose**: For containerized deployment
 - **API Keys**:
-  - Claude Code OAuth Token (from you subscription, `claude setup-token`)
+  - Claude Code OAuth Token (from your subscription, `claude setup-token`)
   - Google Gemini API key (for embeddings, you can claim Free API Key)
 
 ### 1. Clone and Setup
